@@ -11,6 +11,7 @@ import type { ISearchOptions, SearchAddon } from '@xterm/addon-search'
 import { usePreferences } from './usePreferences'
 import { getXtermTheme } from '../theme'
 import type { MobileTerminalInput } from '../lib/mobileTerminalInput'
+import { attachAndroidTerminalInput } from '../lib/androidTerminalInput'
 import {
   TerminalInputError,
   encodeTerminalCommand,
@@ -299,6 +300,19 @@ export function useTerminal(
     termRef.current = term
     fitAddonRef.current = fitAddon
     term.open(container)
+    if (/Android/i.test(navigator.userAgent) && term.textarea) {
+      domCleanupRef.current.push(attachAndroidTerminalInput(container, term.textarea, data => {
+        const socket = wsRef.current
+        if (!socket || socket.readyState !== WebSocket.OPEN) return false
+        try {
+          socket.send(mobileInput ? mobileInput.encode(data) : new TextEncoder().encode(data))
+          return true
+        } catch {
+          setPtyState('reconnecting')
+          return false
+        }
+      }))
+    }
 
     const doFit = () => {
       if (

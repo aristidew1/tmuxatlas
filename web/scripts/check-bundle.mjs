@@ -7,7 +7,8 @@ const files = readdirSync(assets).filter(name => /\.(js|css)$/.test(name))
 const limits = {
   'entry gzip': 130 * 1024,
   'xterm gzip': 85 * 1024,
-  'total brotli': 175 * 1024,
+  // +15 KiB for the lazily loaded host monitoring dashboard (Overview chunk).
+  'total brotli': 190 * 1024,
 }
 let entryGzip = 0
 let xtermGzip = 0

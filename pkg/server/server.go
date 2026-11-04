@@ -9,7 +9,9 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -26,6 +28,7 @@ import (
 	"github.com/LosFurina/tmuxatlas/pkg/httpguard"
 	"github.com/LosFurina/tmuxatlas/pkg/identity"
 	"github.com/LosFurina/tmuxatlas/pkg/ingress"
+	"github.com/LosFurina/tmuxatlas/pkg/monitor"
 	"github.com/LosFurina/tmuxatlas/pkg/peer"
 	"github.com/LosFurina/tmuxatlas/pkg/preferences"
 	"github.com/LosFurina/tmuxatlas/pkg/socket"
@@ -179,6 +182,12 @@ func Run(ctx context.Context, opts *Options) error {
 		}
 		defer coordinator.Close()
 		opts.StateCoordinator = coordinator
+	}
+	// Host monitoring only makes sense where TmuxAtlas runs on a real host.
+	var hostMonitor *monitor.Monitor
+	if opts.Role != "hub" && monitor.Supported() && monitorEnabled(os.Getenv("TMUXATLAS_MONITOR")) {
+		hostMonitor = monitor.New(monitorURLs(os.Getenv("TMUXATLAS_MONITOR_URLS")))
+		go hostMonitor.Run(ctx)
 	}
 
 	if opts.PeerMgr != nil {
@@ -460,6 +469,19 @@ func Run(ctx context.Context, opts *Options) error {
 					return
 				}
 				w.WriteHeader(http.StatusNoContent)
+			})
+
+			// Monitor endpoint — host observability (series + inventories)
+			r.Get("/monitor", func(w http.ResponseWriter, r *http.Request) {
+				if hostMonitor == nil {
+					http.Error(w, "monitoring unavailable on this role", http.StatusNotFound)
+					return
+				}
+				rangeSec := monitorRange(r.URL.Query().Get("range"))
+				after, _ := strconv.ParseInt(r.URL.Query().Get("after"), 10, 64)
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("Cache-Control", "no-store")
+				json.NewEncoder(w).Encode(hostMonitor.Snapshot(rangeSec, after))
 			})
 
 			// Stats endpoint — aggregate overview data
@@ -846,4 +868,40 @@ func Run(ctx context.Context, opts *Options) error {
 	}
 
 	return nil
+}
+
+// monitorEnabled reads TMUXATLAS_MONITOR. Monitoring stays on unless explicitly
+// disabled, since it runs commands such as apt, systemctl and journalctl.
+func monitorEnabled(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "off", "false", "0", "no":
+		return false
+	default:
+		return true
+	}
+}
+
+// monitorRange maps the UI range selector to seconds (default one hour).
+func monitorRange(value string) int64 {
+	switch value {
+	case "15m":
+		return 15 * 60
+	case "6h":
+		return 6 * 3600
+	case "24h":
+		return 24 * 3600
+	default:
+		return 3600
+	}
+}
+
+// monitorURLs parses TMUXATLAS_MONITOR_URLS (comma or space separated).
+func monitorURLs(value string) []string {
+	var urls []string
+	for _, field := range strings.FieldsFunc(value, func(r rune) bool { return r == ',' || r == ' ' }) {
+		if strings.HasPrefix(field, "http://") || strings.HasPrefix(field, "https://") {
+			urls = append(urls, field)
+		}
+	}
+	return urls
 }

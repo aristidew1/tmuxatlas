@@ -6,6 +6,7 @@ import { ActivitySnapshot } from '../hooks/useActivity'
 import { usePreferences } from '../hooks/usePreferences'
 import { toolColors, statusConfig } from '../theme'
 import { FleetHealth } from './FleetHealth'
+import { Monitoring } from './monitoring/Monitoring'
 
 interface OverviewProps {
   sessions: Session[]
@@ -76,7 +77,8 @@ function Sparkline({ data, height = 20 }: { data: number[]; height?: number }) {
   )
 }
 
-function formatUptime(created: string, format: string = 'relative'): string {
+function formatUptime(created: string, format: string = 'relative'): string | null {
+  if (Number.isNaN(new Date(created).getTime())) return null
   if (format === 'absolute') {
     return new Date(created).toLocaleTimeString()
   }
@@ -116,10 +118,10 @@ function UsageBar({ percent, color, label }: { percent: number; color: string; l
 
 function StatCard({ label, value, sub, color }: { label: string; value: string | number; sub?: string; color?: string }) {
   return (
-    <div className="bg-card border border-border rounded-lg p-4 flex-1 min-w-[120px]">
-      <div className="text-2xl font-bold" style={{ color: color || 'var(--color-foreground)' }}>{value}</div>
-      <div className="text-xs text-muted-foreground mt-1">{label}</div>
-      {sub && <div className="text-[11px] text-muted-foreground/60 mt-0.5">{sub}</div>}
+    <div className="bg-card border border-border rounded-lg p-3 flex-1 min-w-[110px]">
+      <div className="text-2xl font-semibold leading-none" style={{ color: color || 'var(--color-foreground)' }}>{value}</div>
+      <div className="text-xs text-muted-foreground mt-2">{label}</div>
+      {sub && <div className="text-[11px] text-muted-foreground mt-0.5">{sub}</div>}
     </div>
   )
 }
@@ -136,7 +138,7 @@ function ProcessBar({ processes, totalPanes }: { processes: { name: string; coun
         return (
           <div key={p.name} className="flex items-center gap-2">
             <span
-              className="w-[90px] text-xs text-right overflow-hidden text-ellipsis whitespace-nowrap shrink-0"
+              className="w-[72px] text-xs text-right overflow-hidden text-ellipsis whitespace-nowrap shrink-0"
               style={{
                 color: isAgent ? (toolColors[p.name] || 'var(--chart-secondary)') : 'var(--color-muted-foreground)',
                 fontWeight: isAgent ? 600 : 400,
@@ -144,16 +146,16 @@ function ProcessBar({ processes, totalPanes }: { processes: { name: string; coun
             >
               {p.name}
             </span>
-            <div className="flex-1 h-[14px] bg-background rounded overflow-hidden">
+            <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
               <div
-                className="h-full rounded min-w-[2px]"
+                className="h-full rounded-full min-w-[2px]"
                 style={{
                   width: `${(p.count / max) * 100}%`,
                   background: isAgent ? (toolColors[p.name] || 'var(--chart-secondary)') : 'var(--color-border)',
                 }}
               />
             </div>
-            <span className="text-[11px] text-muted-foreground/60 w-[45px] shrink-0">
+            <span className="w-[56px] shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">
               {p.count} ({Math.round(pct)}%)
             </span>
           </div>
@@ -175,45 +177,45 @@ function SystemStatsCard({ system }: { system: SystemStats }) {
       <div className="grid grid-cols-2 gap-2 mt-1">
         {system.load && (
           <div>
-            <div className="text-[10px] text-muted-foreground/60 mb-0.5">Load Average</div>
+            <div className="text-[10px] text-muted-foreground mb-0.5">Load Average</div>
             <div className="text-[13px] text-foreground font-mono">
               {system.load['1m'].toFixed(2)}{' '}
               <span className="text-muted-foreground">{system.load['5m'].toFixed(2)}</span>{' '}
-              <span className="text-muted-foreground/60">{system.load['15m'].toFixed(2)}</span>
+              <span className="text-muted-foreground">{system.load['15m'].toFixed(2)}</span>
             </div>
           </div>
         )}
         {system.memory && (
           <div>
-            <div className="text-[10px] text-muted-foreground/60 mb-0.5">Memory</div>
+            <div className="text-[10px] text-muted-foreground mb-0.5">Memory</div>
             <div className="text-[13px] text-foreground">
               {(system.memory.used_mb / 1024).toFixed(1)}
-              <span className="text-muted-foreground/60"> / {(system.memory.total_mb / 1024).toFixed(1)} GB</span>
+              <span className="text-muted-foreground"> / {(system.memory.total_mb / 1024).toFixed(1)} GB</span>
             </div>
           </div>
         )}
         {system.uptime_seconds !== undefined && (
           <div>
-            <div className="text-[10px] text-muted-foreground/60 mb-0.5">System Uptime</div>
+            <div className="text-[10px] text-muted-foreground mb-0.5">System Uptime</div>
             <div className="text-[13px] text-foreground">
               {formatSystemUptime(system.uptime_seconds)}
             </div>
           </div>
         )}
         <div>
-          <div className="text-[10px] text-muted-foreground/60 mb-0.5">CPUs</div>
+          <div className="text-[10px] text-muted-foreground mb-0.5">CPUs</div>
           <div className="text-[13px] text-foreground">
-            {system.cpus} <span className="text-muted-foreground/60">{system.arch}</span>
+            {system.cpus} <span className="text-muted-foreground">{system.arch}</span>
           </div>
         </div>
         <div>
-          <div className="text-[10px] text-muted-foreground/60 mb-0.5">TmuxAtlas Memory</div>
+          <div className="text-[10px] text-muted-foreground mb-0.5">TmuxAtlas Memory</div>
           <div className="text-[13px] text-foreground">
             {system.tmuxatlas_mem_mb.toFixed(1)} MB
           </div>
         </div>
         <div>
-          <div className="text-[10px] text-muted-foreground/60 mb-0.5">Goroutines</div>
+          <div className="text-[10px] text-muted-foreground mb-0.5">Goroutines</div>
           <div className="text-[13px] text-foreground">
             {system.goroutines}
           </div>
@@ -281,7 +283,7 @@ export function Overview({
   }, [prefs.overview_refresh_interval])
 
   return (
-    <div className="flex-1 p-6 overflow-y-auto font-mono text-sm font-bold">
+    <div className="flex-1 overflow-y-auto p-4 ui-body-text text-sm sm:p-6">
       {/* Stat cards */}
       <div className="flex gap-3 mb-6 flex-wrap">
         {hasMultipleHosts && (
@@ -349,14 +351,16 @@ export function Overview({
                   <span className="text-muted-foreground text-xs">in</span>
                   <span className="text-foreground font-semibold text-xs">{evt.host_name ? `${evt.host_name}: ` : ''}{evt.session}</span>
                   {evt.message && (
-                    <span className="text-muted-foreground/60 text-[11px] flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+                    <span className="text-muted-foreground text-[11px] flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
                       — {evt.message}
                     </span>
                   )}
-                  <span
+                  <button
+                    type="button"
+                    aria-label={`Dismiss ${evt.tool} alert in ${evt.session}`}
                     onClick={(e) => { e.stopPropagation(); onDismissAlert(evt) }}
-                    className="text-muted-foreground text-base cursor-pointer leading-none hover:text-foreground"
-                  >×</span>
+                    className="rounded text-muted-foreground text-base cursor-pointer leading-none hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >×</button>
                 </div>
               )
             })}
@@ -389,7 +393,7 @@ export function Overview({
                 }`} />
               )}
               {groupLabel}
-              <span className="text-muted-foreground/60 font-normal text-xs">({groupSessions.length})</span>
+              <span className="text-muted-foreground font-normal text-xs">({groupSessions.length})</span>
             </h3>
             <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-3">
               {groupSessions.map((session) => {
@@ -402,14 +406,25 @@ export function Overview({
                 // Count agents by pane command name OR by tool event detection
                 // (catches agents like codex/copilot that show as "node")
                 const eventPanes = new Set(events.map(e => e.pane).filter(Boolean))
+                const uptime = formatUptime(session.created, prefs.timestamp_format)
+                const windowCount = session.windows?.length || 0
                 const agentCount = (session.windows || []).reduce((n, w) =>
                   n + (w.panes || []).filter(p => agentCommands.has(p.current_command) || eventPanes.has(p.id)).length, 0)
 
                 return (
                   <div
                     key={sk}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Open session ${session.name}`}
                     onClick={() => onSessionSelect(session)}
-                    className={`bg-card rounded-lg p-3.5 cursor-pointer transition-colors hover:border-primary/40 ${isOffline ? 'opacity-60' : ''}`}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        onSessionSelect(session)
+                      }
+                    }}
+                    className={`bg-card rounded-lg p-3.5 cursor-pointer transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${isOffline ? 'opacity-60' : ''}`}
                     style={{
                       border: `1px solid ${hasWaiting ? 'var(--warning)' : 'var(--color-border)'}`,
                     }}
@@ -422,21 +437,23 @@ export function Overview({
                           attached
                         </span>
                       )}
-                      <span className="ml-auto text-[10px] text-muted-foreground/60">
-                        up {formatUptime(session.created, prefs.timestamp_format)}
-                      </span>
+                      {uptime && (
+                        <span className="ml-auto text-[10px] text-muted-foreground">
+                          up {uptime}
+                        </span>
+                      )}
                     </div>
 
                     {/* Stats row */}
                     <div className="flex items-center gap-3 mb-2 text-xs text-muted-foreground">
-                      <span>{session.windows?.length || 0} windows</span>
+                      <span>{windowCount} window{windowCount === 1 ? '' : 's'}</span>
                       {agentCount > 0 && (
-                        <span style={{ color: toolColors.claude }}>{agentCount} agent{agentCount > 1 ? 's' : ''}</span>
+                        <span className="text-foreground">{agentCount} agent{agentCount > 1 ? 's' : ''}</span>
                       )}
                       {active ? (
                         <span className="text-success">active</span>
                       ) : (
-                        <span className="text-muted-foreground/60">idle</span>
+                        <span className="text-muted-foreground">idle</span>
                       )}
                     </div>
 
@@ -467,7 +484,7 @@ export function Overview({
                               <span className="font-semibold" style={{ color: tc }}>{evt.tool}</span>
                               <span className="text-muted-foreground">{config.label}</span>
                               {evt.message && (
-                                <span className="text-muted-foreground/60 ml-auto overflow-hidden text-ellipsis whitespace-nowrap text-[10px]">
+                                <span className="text-muted-foreground ml-auto overflow-hidden text-ellipsis whitespace-nowrap text-[10px]">
                                   {evt.message}
                                 </span>
                               )}
@@ -503,14 +520,13 @@ export function Overview({
             </div>
           )}
 
-          {stats?.system && (
-            <div>
-              <h3 className="text-foreground text-sm font-semibold mb-2.5">System</h3>
-              <SystemStatsCard system={stats.system} />
-            </div>
-          )}
         </div>
       )}
+
+      {/* Host monitoring (local machine) */}
+      <div className="mt-6">
+        <Monitoring />
+      </div>
     </div>
   )
 }

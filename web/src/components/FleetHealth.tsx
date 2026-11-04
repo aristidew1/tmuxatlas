@@ -40,6 +40,12 @@ function parseRecord(health: HealthState): FleetRecord | null {
   return candidate
 }
 
+function formatSync(value?: string): string {
+  if (!value) return 'unknown'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
+}
+
 export function FleetHealth() {
   const { state } = useApplicationState()
   const records = useMemo(() => (
@@ -97,7 +103,7 @@ export function FleetHealthView({ records }: { records: FleetRecord[] }) {
               <dt className="text-muted-foreground">Hub</dt>
               <dd>{record.facts.hub_version || 'unknown'}</dd>
               <dt className="text-muted-foreground">Last sync</dt>
-              <dd>{record.facts.last_state_sync || 'unknown'}</dd>
+              <dd>{formatSync(record.facts.last_state_sync)}</dd>
             </dl>
             <details className="mt-3 text-xs font-normal">
               <summary className="cursor-pointer text-muted-foreground">

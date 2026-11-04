@@ -16,6 +16,7 @@
   "dependencies": {
     "@fontsource/fira-code": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
+    "@fontsource/source-serif-4": "^5.3.1",
     "@fontsource/space-mono": "^5.3.0",
     "@fontsource/vt323": "^5.3.0",
     "@xterm/addon-clipboard": "^0.2.0",

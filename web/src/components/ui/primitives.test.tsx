@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { applyTheme, semanticThemeVars, themePresets } from '../../theme'
+import { applyTheme, DEFAULT_THEME, overridableSemanticTokens, semanticThemeVars, themePresets } from '../../theme'
 import {
   Button,
   Dialog,
@@ -31,6 +31,10 @@ describe('semantic theme contracts', () => {
   it('provides every semantic token in every existing preset', () => {
     for (const preset of Object.values(themePresets)) {
       for (const [token, value] of Object.entries(semanticThemeVars)) {
+        if (overridableSemanticTokens.has(token)) {
+          expect(preset.cssVars[token], `${preset.name} is missing ${token}`).toBeTruthy()
+          continue
+        }
         expect(preset.cssVars[token], `${preset.name} is missing ${token}`).toBe(value)
       }
     }
@@ -236,5 +240,18 @@ describe('feedback and page states', () => {
     expect(screen.getByTestId('skeleton')).toHaveAttribute('aria-hidden', 'true')
     expect(screen.getByRole('heading', { name: 'No sessions' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'New Session' })).toBeInTheDocument()
+  })
+})
+
+describe('default theme', () => {
+  it('falls back to Atlas and restores legacy chrome when switching presets', () => {
+    expect(themePresets[DEFAULT_THEME].label).toBe('Atlas')
+
+    applyTheme('unknown-theme')
+    expect(document.documentElement.style.getPropertyValue('--radius')).toBe('0.5rem')
+
+    applyTheme('retro-blue')
+    expect(document.documentElement.style.getPropertyValue('--radius')).toBe('0.25rem')
+    expect(document.documentElement.style.getPropertyValue('--theme-font-body')).toBe('var(--font-mono)')
   })
 })

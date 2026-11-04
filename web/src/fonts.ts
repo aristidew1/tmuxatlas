@@ -1,6 +1,7 @@
 import '@fontsource/vt323/latin-400.css'
 import '@fontsource/jetbrains-mono/latin-400.css'
 import '@fontsource/jetbrains-mono/latin-700.css'
+import '@fontsource/source-serif-4/latin-500.css'
 
 const bundledTerminalFonts: Record<string, () => Promise<unknown>> = {
   'Space Mono': async () => {

@@ -116,7 +116,7 @@ export function Setup({ onComplete, fullPage = false }: { onComplete: () => void
     <div className={fullPage ? "flex items-center justify-center min-h-dvh w-screen bg-background py-8" : "flex-1 flex items-center justify-center overflow-y-auto"}>
       <div className="w-full max-w-md p-8">
         <div className="text-center mb-6">
-          <h1 className="text-2xl font-bold text-foreground tracking-tight">
+          <h1 className="ui-heading-text text-2xl text-foreground tracking-tight">
             {step === 'agents' ? 'agent setup' : 'preferences'}
           </h1>
           <p className="text-sm text-muted-foreground mt-2">

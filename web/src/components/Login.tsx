@@ -23,10 +23,10 @@ export function Login({ mode, error, rpId, origin, onSubmit }: LoginProps) {
   }
 
   return (
-    <div className="app-shell flex items-center justify-center bg-background font-mono text-sm font-bold">
+    <div className="app-shell flex items-center justify-center bg-background ui-body-text text-sm">
       <div className="w-full max-w-md p-8">
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-foreground tracking-tight">TmuxAtlas</h1>
+          <h1 className="ui-heading-text text-2xl text-foreground tracking-tight">TmuxAtlas</h1>
           <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
             all your tmux sessions<br />
             all your ai agents<br />

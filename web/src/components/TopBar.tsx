@@ -67,7 +67,7 @@ export function TopBar({
       <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden sm:gap-4">
         <button type="button" aria-label="Go to Overview" className="flex shrink-0 cursor-pointer items-center gap-2 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={onOverview}>
           <img src="/icon-192.png" alt="" width="22" height="22" className="rounded-sm" />
-          <span className="hidden font-mono text-sm font-bold text-primary sm:inline">TmuxAtlas</span>
+          <span className="ui-heading-text hidden text-sm text-primary sm:inline">TmuxAtlas</span>
         </button>
 
         {/* New session + collapse sidebar */}
@@ -76,7 +76,7 @@ export function TopBar({
             onClick={() => onNewSession?.()}
             aria-label="New session"
             title="New session"
-            className="grid min-h-11 min-w-11 place-items-center rounded text-foreground transition-colors hover:bg-accent sm:min-h-8 sm:min-w-8"
+            className="grid min-h-11 min-w-11 place-items-center rounded text-foreground transition-colors hover:bg-secondary sm:min-h-8 sm:min-w-8"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -86,7 +86,7 @@ export function TopBar({
             onClick={onToggleCollapse}
             aria-label="Toggle session drawer"
             title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            className="grid min-h-11 min-w-11 place-items-center rounded text-foreground transition-colors hover:bg-accent sm:min-h-8 sm:min-w-8"
+            className="grid min-h-11 min-w-11 place-items-center rounded text-foreground transition-colors hover:bg-secondary sm:min-h-8 sm:min-w-8"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               {sidebarCollapsed ? (
@@ -180,8 +180,8 @@ export function TopBar({
           className={cn(
             'grid min-h-11 min-w-11 place-items-center rounded transition-colors sm:min-h-8 sm:min-w-8',
             currentView === 'settings'
-              ? 'bg-accent text-primary'
-              : 'hover:bg-accent text-foreground',
+              ? 'bg-secondary text-primary'
+              : 'hover:bg-secondary text-foreground',
           )}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

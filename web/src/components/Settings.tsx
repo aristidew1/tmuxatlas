@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { usePreferences, type Preferences } from '../hooks/usePreferences'
 import { usePushNotifications } from '../hooks/usePushNotifications'
-import { themePresets, applyTheme } from '../theme'
+import { cssColorToHex, themePresets, applyTheme } from '../theme'
 import { cn } from '../lib/utils'
 import { AgentStatusList, normalizeAgentStatus, SetupCommandBox, type StatusResult } from './Setup'
 import { PasskeySettings } from './PasskeySettings'
@@ -153,19 +153,13 @@ function resolvedColor(cssVar: string, customTheme: Record<string, string>): str
   // Read from computed style
   const raw = getComputedStyle(document.documentElement).getPropertyValue(cssVar).trim()
   if (raw.startsWith('#')) return raw
-  // Convert oklch/rgb via a temp element
+  // Resolve through a temp element so var() references are followed
   const el = document.createElement('div')
   el.style.color = raw
   document.body.appendChild(el)
   const computed = getComputedStyle(el).color
   document.body.removeChild(el)
-  // Parse rgb(r, g, b)
-  const match = computed.match(/(\d+),\s*(\d+),\s*(\d+)/)
-  if (match) {
-    const hex = (n: number) => n.toString(16).padStart(2, '0')
-    return `#${hex(+match[1])}${hex(+match[2])}${hex(+match[3])}`
-  }
-  return '#888888'
+  return cssColorToHex(computed || raw) ?? '#888888'
 }
 
 const sectionLabels: Record<typeof sectionIds[number], string> = {
@@ -275,12 +269,12 @@ function SettingsContent({ pushState, onPushSubscribe, onPushUnsubscribe, onLogo
 
   return (
     <div
-      className="flex-1 p-6 overflow-y-auto font-mono text-sm font-bold"
+      className="flex-1 p-6 overflow-y-auto ui-body-text text-sm"
       aria-busy={saveState === 'saving' || undefined}
     >
       <div className="max-w-2xl">
         <div className="flex items-start justify-between gap-4 mb-5">
-          <h2 className="text-lg font-bold text-foreground tracking-wider">SETTINGS</h2>
+          <h2 className="ui-heading-text text-xl text-foreground">Settings</h2>
           <div className="min-h-7 text-right">
             {saveState === 'saving' && (
               <span className="text-xs text-primary" role="status" aria-live="polite">

@@ -99,7 +99,7 @@ function MenuItem({
       role="menuitem"
       disabled={disabled}
       onClick={onClick}
-      className="flex min-h-9 w-full items-center rounded px-3 text-left hover:bg-accent focus:bg-accent disabled:opacity-40"
+      className="flex min-h-9 w-full items-center rounded px-3 text-left hover:bg-secondary focus:bg-secondary disabled:opacity-40"
     >
       {label}
     </button>

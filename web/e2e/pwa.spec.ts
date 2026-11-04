@@ -42,7 +42,7 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   server?.kill('SIGTERM')
-  await rm(testHome, { recursive: true, force: true })
+  await rm(testHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
 })
 
 test('serves install metadata and a network-neutral root Service Worker', async ({ page, request }) => {
@@ -57,8 +57,8 @@ test('serves install metadata and a network-neutral root Service Worker', async 
     start_url: '/',
     scope: '/',
     display: 'standalone',
-    background_color: '#0d1117',
-    theme_color: '#0d1117',
+    background_color: '#0e1014',
+    theme_color: '#0e1014',
   })
   expect(manifest.icons.some((icon: { purpose?: string }) => icon.purpose === 'any')).toBe(true)
   expect(manifest.icons.some((icon: { purpose?: string }) => icon.purpose === 'maskable')).toBe(true)

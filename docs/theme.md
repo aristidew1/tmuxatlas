@@ -88,7 +88,7 @@ These identify AI tools and stay constant across themes.
 
 | Tool | Hex |
 |------|-----|
-| Claude | `#c4a0ff` |
+| Claude | `#d97757` |
 | Codex | `#66e088` |
 | Copilot | `#66b3ff` |
 | OpenCode | `#bc8cff` |
@@ -107,6 +107,8 @@ Status colors are derived from theme CSS variables:
 
 **Total slots for a new theme: 31 CSS vars + 21 xterm colors = 52 values.**
 
-Existing themes: `retro-blue` (default), `dark`, `light`, `green-phosphor`, `midnight`.
+Existing themes: `atlas` (default), `claude-dark`, `claude-light`, `retro-blue`, `dark`, `light`, `green-phosphor`, `midnight`.
+
+Themes can also override `--radius`, `--theme-font-body`, `--theme-font-body-weight`, `--theme-font-heading` and `--theme-font-heading-weight` and the monitoring chart pair `--mon-a` / `--mon-b`; see `claudeChromeVars`. Validate a new chart pair for colour-blind separation and contrast on its `--card`.
 
 File to edit: `web/src/theme.ts`

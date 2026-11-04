@@ -448,10 +448,10 @@ export function Sidebar({
             className="fixed z-[10000] min-w-56 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-lg"
             style={{ left: Math.min(contextMenu.x, window.innerWidth - 240), top: Math.min(contextMenu.y, window.innerHeight - 280) }}
           >
-            <button role="menuitem" type="button" onClick={() => startRename(contextMenu.session)} className="flex h-10 w-full items-center rounded px-3 text-left hover:bg-accent focus:bg-accent focus:outline-none">Rename</button>
-            <button role="menuitem" type="button" onClick={() => { onTogglePin(contextMenu.session.key); setContextMenu(null) }} className="flex h-10 w-full items-center rounded px-3 text-left hover:bg-accent focus:bg-accent focus:outline-none">{pinnedSet.has(contextMenu.session.key) ? 'Unpin' : 'Pin'}</button>
+            <button role="menuitem" type="button" onClick={() => startRename(contextMenu.session)} className="flex h-10 w-full items-center rounded px-3 text-left hover:bg-secondary focus:bg-secondary focus:outline-none">Rename</button>
+            <button role="menuitem" type="button" onClick={() => { onTogglePin(contextMenu.session.key); setContextMenu(null) }} className="flex h-10 w-full items-center rounded px-3 text-left hover:bg-secondary focus:bg-secondary focus:outline-none">{pinnedSet.has(contextMenu.session.key) ? 'Unpin' : 'Pin'}</button>
             <div role="separator" className="my-1 h-px bg-border" />
-            <button role="menuitem" type="button" onClick={() => runDetach(contextMenu.session.key)} className="flex h-10 w-full items-center rounded px-3 text-left hover:bg-accent focus:bg-accent focus:outline-none">Detach browser client (tmux keeps running)</button>
+            <button role="menuitem" type="button" onClick={() => runDetach(contextMenu.session.key)} className="flex h-10 w-full items-center rounded px-3 text-left hover:bg-secondary focus:bg-secondary focus:outline-none">Detach browser client (tmux keeps running)</button>
             <div role="separator" className="my-1 h-px bg-border" />
             {canKillSession && onKillSession ? (
               <button
@@ -460,7 +460,7 @@ export function Sidebar({
                 onClick={() => { setKillTarget(contextMenu.session); setContextMenu(null) }}
                 className="flex h-10 w-full items-center rounded px-3 text-left text-destructive hover:bg-destructive/10 focus:bg-destructive/10 focus:outline-none"
               >
-                End tmux session…
+                Supprimer la session…
               </button>
             ) : (
               <p className="px-3 py-2 text-[11px] text-muted-foreground">Browser detach only. This Host does not expose a safe kill-session capability.</p>
@@ -474,11 +474,11 @@ export function Sidebar({
           open
           role="alertdialog"
           onOpenChange={open => { if (!open) setKillTarget(null) }}
-          title="End tmux session permanently?"
-          description="This terminates the tmux session, not just this browser view."
+          title="Supprimer définitivement la session tmux ?"
+          description="La session tmux et tous les programmes qui y tournent seront arrêtés, pas seulement cette vue du navigateur."
           footer={(
             <>
-              <Button variant="secondary" onClick={() => setKillTarget(null)}>Cancel</Button>
+              <Button variant="secondary" onClick={() => setKillTarget(null)}>Annuler</Button>
               <Button
                 variant="destructive"
                 onClick={async () => {
@@ -487,7 +487,7 @@ export function Sidebar({
                   await onKillSession?.(target)
                 }}
               >
-                End tmux session
+                Supprimer la session
               </Button>
             </>
           )}

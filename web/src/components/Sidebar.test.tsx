@@ -134,17 +134,17 @@ describe('state-driven Sidebar', () => {
       onDetachSession={vi.fn()}
     />)
     fireEvent.contextMenu(screen.getByRole('button', { name: /Open Duplicate Host session work, Waiting/ }))
-    expect(screen.queryByRole('menuitem', { name: 'End tmux session…' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Supprimer la session…' })).not.toBeInTheDocument()
     expect(screen.getByText(/Browser detach only/)).toBeInTheDocument()
     unmount()
 
     renderSidebar({ canKillSession: true, onKillSession: kill })
     fireEvent.contextMenu(screen.getByRole('button', { name: /Open Duplicate Host session work, Waiting/ }))
-    await userEvent.click(screen.getByRole('menuitem', { name: 'End tmux session…' }))
-    const dialog = screen.getByRole('alertdialog', { name: 'End tmux session permanently?' })
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Supprimer la session…' }))
+    const dialog = screen.getByRole('alertdialog', { name: 'Supprimer définitivement la session tmux ?' })
     expect(dialog).toHaveTextContent('Duplicate Host (host-a)')
     expect(dialog).toHaveTextContent('Session: work')
-    await userEvent.click(screen.getByRole('button', { name: 'End tmux session' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Supprimer la session' }))
     expect(kill).toHaveBeenCalledWith('host-a/work')
   })
 

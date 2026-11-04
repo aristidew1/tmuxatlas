@@ -180,6 +180,7 @@ func Run(ctx context.Context, opts *Options) error {
 		defer coordinator.Close()
 		opts.StateCoordinator = coordinator
 	}
+
 	if opts.PeerMgr != nil {
 		if _, err := coordinator.ReplaceHosts(ctx, opts.PeerMgr.StateHostSnapshots()); err != nil {
 			return fmt.Errorf("initialize canonical host projection: %w", err)
@@ -390,6 +391,10 @@ func Run(ctx context.Context, opts *Options) error {
 
 			mutations.With(httpguard.BodyReadDeadline(10*time.Second), httpguard.JSONBody(httpguard.SmallJSONLimit)).Post("/session/rename", func(w http.ResponseWriter, r *http.Request) {
 				handleSessionRename(w, r, actionRouter, opts)
+			})
+
+			mutations.With(httpguard.BodyReadDeadline(10*time.Second), httpguard.JSONBody(httpguard.SmallJSONLimit)).Post("/session/kill", func(w http.ResponseWriter, r *http.Request) {
+				handleSessionKill(w, r, actionRouter, opts)
 			})
 
 			mutations.With(httpguard.BodyReadDeadline(10*time.Second), httpguard.JSONBody(httpguard.SmallJSONLimit)).Post("/session/select-window", func(w http.ResponseWriter, r *http.Request) {

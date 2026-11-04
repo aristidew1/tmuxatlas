@@ -36,6 +36,7 @@ import (
 	"github.com/LosFurina/tmuxatlas/pkg/stats"
 	"github.com/LosFurina/tmuxatlas/pkg/tmux"
 	"github.com/LosFurina/tmuxatlas/pkg/toolevents"
+	"github.com/LosFurina/tmuxatlas/pkg/voice"
 	"github.com/LosFurina/tmuxatlas/pkg/webpush"
 	"github.com/LosFurina/tmuxatlas/pkg/ws"
 )
@@ -188,6 +189,16 @@ func Run(ctx context.Context, opts *Options) error {
 	if opts.Role != "hub" && monitor.Supported() && monitorEnabled(os.Getenv("TMUXATLAS_MONITOR")) {
 		hostMonitor = monitor.New(monitorURLs(os.Getenv("TMUXATLAS_MONITOR_URLS")))
 		go hostMonitor.Run(ctx)
+	}
+	// The browser microphone feeds programs on this host, so it needs local tmux.
+	var browserMic *voice.Mic
+	if opts.Client != nil && voice.Enabled(os.Getenv("TMUXATLAS_VOICE")) {
+		browserMic = voice.New()
+		go func() {
+			if err := browserMic.Setup(ctx); err != nil {
+				logrus.WithError(err).Warn("voice setup failed")
+			}
+		}()
 	}
 
 	if opts.PeerMgr != nil {
@@ -471,6 +482,17 @@ func Run(ctx context.Context, opts *Options) error {
 				w.WriteHeader(http.StatusNoContent)
 			})
 
+			// Voice status — whether the browser microphone can be used on this host
+			r.Get("/voice", func(w http.ResponseWriter, r *http.Request) {
+				status := voice.Status{}
+				if browserMic != nil {
+					status = browserMic.Status()
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("Cache-Control", "no-store")
+				json.NewEncoder(w).Encode(status)
+			})
+
 			// Monitor endpoint — host observability (series + inventories)
 			r.Get("/monitor", func(w http.ResponseWriter, r *http.Request) {
 				if hostMonitor == nil {
@@ -719,6 +741,9 @@ func Run(ctx context.Context, opts *Options) error {
 	if opts.AuthEnabled {
 		authMw := auth.Middleware(opts.SessionMgr, opts.SecureCookies)
 		publicRouter.With(authMw, originMiddleware, admissionMiddleware(ingressPolicy, ingress.CategoryWSTerminal)).Get("/ws/events", hub.HandleEvents)
+		if browserMic != nil {
+			publicRouter.With(authMw, originMiddleware, admissionMiddleware(ingressPolicy, ingress.CategoryWSTerminal)).Get("/ws/mic", browserMic.HandleStream)
+		}
 		publicRouter.With(authMw, originMiddleware, admissionMiddleware(ingressPolicy, ingress.CategoryWSTerminal)).Get("/ws/session", func(w http.ResponseWriter, req *http.Request) {
 			hostID := req.URL.Query().Get("host")
 			if opts.PeerMgr == nil || hostID == "" || !opts.PeerMgr.HasHost(hostID) {
@@ -737,6 +762,9 @@ func Run(ctx context.Context, opts *Options) error {
 		})
 	} else {
 		publicRouter.With(originMiddleware, admissionMiddleware(ingressPolicy, ingress.CategoryWSTerminal)).Get("/ws/events", hub.HandleEvents)
+		if browserMic != nil {
+			publicRouter.With(originMiddleware, admissionMiddleware(ingressPolicy, ingress.CategoryWSTerminal)).Get("/ws/mic", browserMic.HandleStream)
+		}
 		publicRouter.With(originMiddleware, admissionMiddleware(ingressPolicy, ingress.CategoryWSTerminal)).Get("/ws/session", func(w http.ResponseWriter, req *http.Request) {
 			hostID := req.URL.Query().Get("host")
 			if opts.PeerMgr == nil || hostID == "" || !opts.PeerMgr.HasHost(hostID) {

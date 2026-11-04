@@ -30,7 +30,7 @@ TmuxAtlas is a web dashboard for monitoring and interacting with tmux sessions. 
 ```
 main.go                  # Entry point, urfave/cli v3
 pkg/
-  commands/              # CLI commands (server, notify, pair, peers, agent-setup, install)
+  commands/              # CLI commands (server, agent, agent-setup, bootstrap, doctor, healthcheck, install, notify, pair, peers, update)
   server/                # Chi HTTP server + embedded frontend
   ws/                    # WebSocket hub (broadcast) + PTY terminal bridge
   state/                 # Central state tree with diff-based broadcasting
@@ -38,14 +38,20 @@ pkg/
   peer/                  # Multi-host peer protocol, manager, PTY relay
   identity/              # ed25519 keypair, peer store, pairing
   toolevents/            # Agent detection, event tracking, silence monitor, prompt parser
-  auth/                  # Password auth + session management
+  auth/                  # Passkey auth + session management
   agentcheck/            # Agent installation & hook configuration checks
   activity/              # Activity tracking (sparklines)
+  monitor/               # Host monitoring: metrics, services, probes, alerts (`/api/monitor`, disable with TMUXATLAS_MONITOR=off)
+  fleethealth/           # Fleet health evaluation
+  httpguard/             # HTTP request guards (body limits and deadlines)
+  ingress/               # Bounded admission controls for ingress connections
+  paths/                 # Config and state directory resolution
   common/                # Command registration, version, logging setup
   socket/                # Unix socket communication
   preferences/           # User preferences
   stats/                 # System statistics
   webpush/               # Browser push notifications
+  voice/                 # Browser microphone to PulseAudio virtual mic (`/ws/mic`, enable with TMUXATLAS_VOICE=on)
 web/
   src/
     App.tsx              # Main app component

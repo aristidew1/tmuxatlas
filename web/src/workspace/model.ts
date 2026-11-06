@@ -103,8 +103,7 @@ export function buildWorkspaceViewModel(
     ].join(' ').toLowerCase()
     return { key, hostId: session.host, hostName, name: session.name, status, lastActivity, agents, activity: activitySnapshot, searchText, source: session }
   }).sort((left, right) => (
-    statusPriority[right.status] - statusPriority[left.status]
-    || (Date.parse(right.lastActivity || '') || 0) - (Date.parse(left.lastActivity || '') || 0)
+    (Date.parse(right.source.created) || 0) - (Date.parse(left.source.created) || 0)
     || left.name.localeCompare(right.name)
     || left.hostId.localeCompare(right.hostId)
   ))

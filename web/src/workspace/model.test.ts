@@ -24,6 +24,18 @@ const hosts: Host[] = [
 ]
 
 describe('Workspace view model', () => {
+  it('keeps sessions ordered by creation time when activity and status change', () => {
+    const older = { ...session('host-a', 'older'), created: '2026-01-01T00:00:00Z' }
+    const newer = { ...session('host-a', 'newer'), created: '2026-01-02T00:00:00Z' }
+    const first = buildWorkspaceViewModel([newer, older], [], new Map(), hosts)
+    const updated = buildWorkspaceViewModel([
+      { ...newer, attached: true, last_activity: '2026-01-05T00:00:00Z' },
+      { ...older, last_activity: '2026-01-04T00:00:00Z' },
+    ], [{ host: 'host-a', session: 'newer', tool: 'codex', status: 'error', window: 0, timestamp: '2026-01-06T00:00:00Z' }], new Map(), hosts)
+    expect(first.sessions.map(value => value.name)).toEqual(['newer', 'older'])
+    expect(updated.hosts[0].sessions.map(value => value.name)).toEqual(['newer', 'older'])
+  })
+
   it('keeps same-name Hosts and Sessions as separate canonical targets', () => {
     const model = buildWorkspaceViewModel([session('host-a'), session('host-b')], [], new Map(), hosts)
     expect(model.hosts).toHaveLength(2)

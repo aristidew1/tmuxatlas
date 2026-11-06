@@ -10,7 +10,7 @@ import {
 } from 'react'
 import type { ActivitySnapshot } from '../hooks/useActivity'
 import type { Host } from '../hooks/useHosts'
-import type { Session } from '../hooks/useSessions'
+import type { FreeSession, Session } from '../hooks/useSessions'
 import type { ToolEvent } from '../hooks/useToolEvents'
 import { StateConnectionController } from './connection'
 import {
@@ -19,12 +19,19 @@ import {
   type ApplicationStateAction,
   type ApplicationState,
 } from './reducer'
-import { selectActivity, selectHosts, selectSessions, selectToolEvents } from './selectors'
+import {
+  selectActivity,
+  selectFreeSessions,
+  selectHosts,
+  selectSessions,
+  selectToolEvents,
+} from './selectors'
 import type { StateEnvelope } from './types'
 
 interface ApplicationStateContextValue {
   state: ApplicationState
   sessions: Session[]
+  freeSessions: FreeSession[]
   hosts: Host[]
   toolEvents: ToolEvent[]
   activity: Map<string, ActivitySnapshot>
@@ -78,13 +85,23 @@ export function ApplicationStateProvider({ children }: PropsWithChildren) {
   }, [dispatchSynchronized])
 
   const sessions = useMemo(() => selectSessions(state), [state])
+  const freeSessions = useMemo(() => selectFreeSessions(state), [state])
   const hosts = useMemo(() => selectHosts(state, sessions), [state, sessions])
   const toolEvents = useMemo(() => selectToolEvents(state), [state])
   const activity = useMemo(() => selectActivity(state), [state])
   const rehydrate = useCallback(() => controllerRef.current?.rehydrate(), [])
-  const value = useMemo(() => ({
-    state, sessions, hosts, toolEvents, activity, rehydrate,
-  }), [state, sessions, hosts, toolEvents, activity, rehydrate])
+  const value = useMemo(
+    () => ({
+      state,
+      sessions,
+      freeSessions,
+      hosts,
+      toolEvents,
+      activity,
+      rehydrate,
+    }),
+    [state, sessions, freeSessions, hosts, toolEvents, activity, rehydrate],
+  )
 
   return (
     <ApplicationStateContext.Provider value={value}>

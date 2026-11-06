@@ -6,16 +6,19 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v3"
 
+	"github.com/LosFurina/tmuxatlas/pkg/accounts"
 	"github.com/LosFurina/tmuxatlas/pkg/activity"
 	"github.com/LosFurina/tmuxatlas/pkg/auth"
 	"github.com/LosFurina/tmuxatlas/pkg/common"
 	"github.com/LosFurina/tmuxatlas/pkg/identity"
+	"github.com/LosFurina/tmuxatlas/pkg/paths"
 	"github.com/LosFurina/tmuxatlas/pkg/peer"
 	"github.com/LosFurina/tmuxatlas/pkg/preferences"
 	"github.com/LosFurina/tmuxatlas/pkg/server"
@@ -114,6 +117,37 @@ func ExecuteHub(ctx context.Context, c *cli.Command) error {
 }
 
 func execute(ctx context.Context, c *cli.Command, pureHub bool) error {
+	var accountAuth *auth.AccountsAuth
+	var accountSessions *auth.SessionManager
+	var adminID, adminName string
+	if c.String("auth") == "accounts" {
+		store, err := accounts.NewStore()
+		if err != nil {
+			return err
+		}
+		users, err := store.List()
+		if err != nil {
+			return err
+		}
+		for _, user := range users {
+			if user.Role == "admin" && !user.Disabled {
+				adminID = user.ID
+				adminName = user.Username
+				break
+			}
+		}
+		if adminID == "" {
+			return fmt.Errorf("aucun administrateur actif ; utilisez tmuxatlas users bootstrap-admin")
+		}
+		if c.Duration("session-ttl") < time.Minute {
+			return fmt.Errorf("la durée de session doit être d'au moins une minute")
+		}
+		accountSessions = auth.NewSessionManager(c.Duration("session-ttl"))
+		accountAuth, err = auth.NewAccountsAuth(store, accountSessions)
+		if err != nil {
+			return err
+		}
+	}
 	tracker := toolevents.NewTracker()
 	actTracker := activity.NewTracker()
 	var (
@@ -127,6 +161,15 @@ func execute(ctx context.Context, c *cli.Command, pureHub bool) error {
 		client, err = tmux.NewClient()
 		if err != nil {
 			return err
+		}
+		if accountAuth != nil {
+			dir, err := paths.ConfigDir()
+			if err != nil {
+				return err
+			}
+			if err := tmux.MigrateOwners(client, filepath.Join(dir, "accounts-ownership-migrated"), adminID, adminName); err != nil {
+				return fmt.Errorf("migration des propriétaires : %w", err)
+			}
 		}
 		stateMgr = state.NewManager(client)
 		interval := time.Duration(c.Int("discovery-interval")) * time.Second
@@ -216,6 +259,11 @@ func execute(ctx context.Context, c *cli.Command, pureHub bool) error {
 		return err
 	}
 
+	// Do not silently start with Passkey authentication when accounts mode is requested.
+	if c.String("auth") != "" && c.String("auth") != "passkey" && c.String("auth") != "accounts" {
+		return fmt.Errorf("mode d’authentification %q indisponible", c.String("auth"))
+	}
+
 	// Initialize Passkey-only authentication. The RP ID and allowed origin are
 	// derived from the externally reachable URL, not the internal listen address.
 	var (
@@ -223,7 +271,10 @@ func execute(ctx context.Context, c *cli.Command, pureHub bool) error {
 		passkeyManager *auth.PasskeyManager
 		sessionMgr     *auth.SessionManager
 	)
-	if !c.Bool("no-auth") {
+	if accountAuth != nil {
+		sessionMgr = accountSessions
+		authEnabled = true
+	} else if !c.Bool("no-auth") {
 		sessionTTL := c.Duration("session-ttl")
 		if sessionTTL < time.Minute {
 			return fmt.Errorf("session TTL must be at least 1 minute")
@@ -316,6 +367,7 @@ func execute(ctx context.Context, c *cli.Command, pureHub bool) error {
 		PushStore:       pushStore,
 		PrefStore:       prefStore,
 		AuthEnabled:     authEnabled,
+		AccountsAuth:    accountAuth,
 		PasskeyManager:  passkeyManager,
 		SessionMgr:      sessionMgr,
 		PeerMgr:         peerMgr,
@@ -334,6 +386,7 @@ func execute(ctx context.Context, c *cli.Command, pureHub bool) error {
 
 func serverFlags() []cli.Flag {
 	return []cli.Flag{
+		&cli.StringFlag{Name: "auth", Sources: cli.EnvVars("TMUXATLAS_AUTH")},
 		&cli.StringFlag{
 			Name:    "listen",
 			Usage:   "HTTP origin listen address",
@@ -388,6 +441,7 @@ func serverFlags() []cli.Flag {
 
 func hubFlags() []cli.Flag {
 	return []cli.Flag{
+		&cli.StringFlag{Name: "auth", Sources: cli.EnvVars("TMUXATLAS_AUTH")},
 		&cli.StringFlag{
 			Name: "listen", Usage: "HTTP origin listen address",
 			Sources: cli.EnvVars("TMUXATLAS_LISTEN"), Value: defaultListenAddress,
@@ -412,6 +466,12 @@ func hubFlags() []cli.Flag {
 }
 
 func validateServerCommand(ctx context.Context, c *cli.Command) (context.Context, error) {
+	if c.String("auth") != "" && c.String("auth") != "passkey" && c.String("auth") != "accounts" {
+		return ctx, fmt.Errorf("mode d'authentification %q indisponible", c.String("auth"))
+	}
+	if c.String("auth") == "accounts" && c.Bool("no-auth") {
+		return ctx, fmt.Errorf("le mode comptes est incompatible avec --no-auth")
+	}
 	if err := validateRemovedTransportEnv(); err != nil {
 		return ctx, err
 	}

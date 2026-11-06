@@ -102,3 +102,25 @@ func TestActionRouterRejectsMissingAndUnknownHost(t *testing.T) {
 		}
 	}
 }
+
+func TestOwnerNameRequiresUpdatedAgent(t *testing.T) {
+	manager := newRouterManager(t)
+	remoteID := "old-agent"
+	capabilities := []string{CapabilitySessionActions, CapabilityRequestResults, CapabilitySessionOwnership, CapabilitySessionExtras}
+	connection := newPeerConnection(context.Background(), remoteID, 1, capabilities, "agent", 4, func(*Message) error {
+		t.Error("action envoyée à un ancien Agent")
+		return nil
+	}, nil)
+	if !manager.ActivatePeer(remoteID, "remote", "key", connection) {
+		t.Fatal("activate remote")
+	}
+	manager.UpdatePeerSessions(remoteID, []*tmux.Session{{Name: "work"}})
+	router := NewActionRouter(manager, nil, time.Second)
+	for _, operation := range []string{"new", "claim", "release"} {
+		_, err := router.Execute(context.Background(), operation, SessionTarget{HostID: remoteID, Session: "work"}, json.RawMessage(`{"owner":"id","owner_name":"alice"}`))
+		var runtimeError RuntimeError
+		if !errors.As(err, &runtimeError) || runtimeError.Code != ErrorUnsupported {
+			t.Fatalf("%s: %v", operation, err)
+		}
+	}
+}

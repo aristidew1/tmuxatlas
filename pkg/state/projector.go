@@ -47,13 +47,13 @@ func ReconcileHosts(current Projection, hosts []HostSnapshot) ([]Operation, erro
 			Online: source.Online, Local: source.Local, Version: source.Version,
 		}
 		for _, tmuxSession := range source.Sessions {
-			if tmuxSession == nil || tmuxSession.Name == "" {
+			if tmuxSession == nil || tmuxSession.Name == "" || tmuxSession.Name == "tmuxatlas-ctrl" {
 				continue
 			}
 			sessionKey := NewSessionKey(source.ID, tmuxSession.Name)
 			next.Sessions[sessionKey] = Session{
 				Key: sessionKey, HostKey: hostKey, HostID: source.ID,
-				Name: tmuxSession.Name, TmuxID: tmuxSession.ID,
+				Name: tmuxSession.Name, Owner: tmuxSession.Owner, TmuxID: tmuxSession.ID,
 				Attached: tmuxSession.Attached, Created: tmuxSession.Created,
 				LastActivity: tmuxSession.LastActivity,
 			}

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { User } from 'lucide-react'
 import type { RegisteredCommand } from '../commands/registry'
 import { formatShortcut } from '../commands/registry'
+import { resolveOwnerName } from '../lib/accountsApi'
 import { cn } from '../lib/utils'
 import type { WorkspaceSession, WorkspaceViewModel } from '../workspace/model'
 import { isAttentionStatus, workspaceStatusLabel } from '../workspace/model'
@@ -23,6 +25,7 @@ interface PaletteItem {
   id: string
   group: PaletteGroup
   label: string
+  ownerName?: string | null
   detail?: string
   keywords: string
   disabled: boolean
@@ -64,12 +67,15 @@ function fuzzyScore(query: string, text: string): number | null {
 
 function sessionItem(session: WorkspaceSession, group: PaletteGroup): PaletteItem {
   const agentDetail = session.agents.length > 0 ? ` · ${session.agents.join(', ')}` : ''
+  const ownerName =
+    session.ownerName !== undefined ? session.ownerName : resolveOwnerName(session.owner ?? session.source.owner)
   return {
     id: `session:${session.key}`,
     group,
     label: session.name,
+    ownerName,
     detail: `${session.hostName} · ${workspaceStatusLabel(session.status)}${agentDetail}`,
-    keywords: session.searchText,
+    keywords: `${session.searchText} ${ownerName || ''}`,
     disabled: false,
     status: session.status,
     target: session.key,
@@ -335,6 +341,15 @@ export function QuickSwitcher({
                       <StatusIcon status="neutral" className="text-muted-foreground" />
                     )}
                     <span className="min-w-0 flex-1 truncate font-medium">{item.label}</span>
+                    {item.ownerName && (
+                      <span
+                        data-testid="palette-owner-badge"
+                        className="inline-flex shrink-0 items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-2xs text-muted-foreground"
+                      >
+                        <User size={12} aria-hidden="true" />
+                        <span>{item.ownerName}</span>
+                      </span>
+                    )}
                     {item.detail && (
                       <span className="max-w-[55%] truncate text-xs text-muted-foreground">{item.detail}</span>
                     )}

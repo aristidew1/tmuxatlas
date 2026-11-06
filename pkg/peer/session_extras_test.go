@@ -20,9 +20,13 @@ func isolatedTmux(t *testing.T) *tmux.Client {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "tmx")
 	if err != nil {
+		dir, err = os.MkdirTemp("/tmp", "tmx")
+	}
+	if err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("TMUX_TMPDIR", dir)
+	t.Setenv("AI_ACCOUNTS_DIR", filepath.Join(dir, "ai-accounts"))
 	t.Setenv("TMUX", "")
 	t.Setenv("TMUX_PANE", "")
 	os.Unsetenv("TMUX")
@@ -113,6 +117,40 @@ func TestPreviewReturnsLinesAndPrompt(t *testing.T) {
 	raw, _ = runExec(t, client, "preview", "prev", map[string]any{"lines": 1})
 	if !strings.Contains(string(raw), `"lines":["  2. No"]`) {
 		t.Fatalf("lines not limited: %s", raw)
+	}
+}
+
+func TestSelectRejectsPaneFromAnotherSession(t *testing.T) {
+	client := isolatedTmux(t)
+	local := startPromptSession(t, client, "select-local", "sleep 30")
+	foreign := startPromptSession(t, client, "select-foreign", "sleep 30")
+	for _, operation := range []string{"select-pane", "select-window"} {
+		payload := map[string]any{"pane": foreign, "window": 0}
+		if _, err := runExec(t, client, operation, "select-local", payload); err == nil {
+			t.Fatalf("%s accepted a pane belonging to another session", operation)
+		}
+		payload["pane"] = local
+		if _, err := runExec(t, client, operation, "select-local", payload); err != nil {
+			t.Fatalf("%s rejected the session's own pane: %v", operation, err)
+		}
+	}
+}
+
+func TestOwnerActionReadsCurrentTmuxOwner(t *testing.T) {
+	client := isolatedTmux(t)
+	if err := client.NewOwnedSession("owner-read", "", "alice"); err != nil {
+		t.Fatal(err)
+	}
+	result, err := runExec(t, client, "owner", "owner-read", map[string]any{})
+	if err != nil || string(result) != `{"owner":"alice"}` {
+		t.Fatalf("propriétaire initial : %s %v", result, err)
+	}
+	if err := client.ChangeOwner("owner-read", "alice", "", false); err != nil {
+		t.Fatal(err)
+	}
+	result, err = runExec(t, client, "owner", "owner-read", map[string]any{})
+	if err != nil || string(result) != `{"owner":null}` {
+		t.Fatalf("session libérée : %s %v", result, err)
 	}
 }
 

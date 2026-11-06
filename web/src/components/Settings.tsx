@@ -1,6 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, type FormEvent } from 'react'
 import { usePreferences, type Preferences } from '../hooks/usePreferences'
 import { usePushNotifications } from '../hooks/usePushNotifications'
+import type { AccountRole, AuthMode } from '../hooks/useAuth'
+import { changeOwnPassword } from '../lib/accountsApi'
 import { cssColorToHex, themePresets, applyTheme } from '../theme'
 import { cn } from '../lib/utils'
 import { AgentStatusList, normalizeAgentStatus, SetupCommandBox, type StatusResult } from './Setup'
@@ -208,11 +210,21 @@ interface SettingsProps {
   onPushSubscribe: () => void
   onPushUnsubscribe: () => void
   onLogout?: () => void
+  authMode?: AuthMode
+  role?: AccountRole | null
   pwaInstall: PWAInstallState
 }
 
-function SettingsContent({ pushState, onPushSubscribe, onPushUnsubscribe, onLogout, pwaInstall }: SettingsProps) {
-  const { prefs, updatePrefs, saveState, saveError, retrySave } = usePreferences()
+function SettingsContent({
+  pushState,
+  onPushSubscribe,
+  onPushUnsubscribe,
+  onLogout,
+  authMode,
+  role,
+  pwaInstall,
+}: SettingsProps) {
+  const { prefs, updatePrefs, saveState, saveError, retrySave, isLocalOnly } = usePreferences()
   const { hosts } = useApplicationState()
   const hostLabel = useHostLabel()
   const { dismiss, toast } = useToast()
@@ -222,18 +234,61 @@ function SettingsContent({ pushState, onPushSubscribe, onPushUnsubscribe, onLogo
   const [agentStatus, setAgentStatus] = useState<StatusResult | null>(null)
   const [agentLoading, setAgentLoading] = useState(false)
 
+  // Password change state for accounts mode
+  const [oldPassword, setOldPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [passwordError, setPasswordError] = useState<string | null>(null)
+  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null)
+  const [changingPassword, setChangingPassword] = useState(false)
+
+  const isAccountsMode = authMode === 'accounts' || role === 'admin' || role === 'user'
+  const isNonAdminUser = role === 'user'
+
   const fetchAgentStatus = useCallback(async () => {
+    if (isNonAdminUser) return
     setAgentLoading(true)
     try {
       const res = await fetch('/api/agent-status')
       if (res.ok) setAgentStatus(normalizeAgentStatus(await res.json()))
     } catch {}
     setAgentLoading(false)
-  }, [])
+  }, [isNonAdminUser])
 
   useEffect(() => {
+    if (isNonAdminUser) return
     fetchAgentStatus()
-  }, [fetchAgentStatus])
+  }, [fetchAgentStatus, isNonAdminUser])
+
+  const handlePasswordChange = async (event: FormEvent) => {
+    event.preventDefault()
+    setPasswordError(null)
+    setPasswordSuccess(null)
+    if (!oldPassword) {
+      setPasswordError('Veuillez saisir votre ancien mot de passe.')
+      return
+    }
+    if (newPassword.length < 10 || newPassword.length > 200) {
+      setPasswordError('Le nouveau mot de passe doit contenir entre 10 et 200 caractères.')
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError('Les nouveaux mots de passe ne correspondent pas.')
+      return
+    }
+    setChangingPassword(true)
+    try {
+      await changeOwnPassword(oldPassword, newPassword)
+      setOldPassword('')
+      setNewPassword('')
+      setConfirmPassword('')
+      setPasswordSuccess('Mot de passe mis à jour.')
+    } catch (err) {
+      setPasswordError(err instanceof Error ? err.message : 'Impossible de modifier le mot de passe.')
+    } finally {
+      setChangingPassword(false)
+    }
+  }
 
   useEffect(() => {
     if (previousSaveState.current === saveState) return
@@ -292,7 +347,12 @@ function SettingsContent({ pushState, onPushSubscribe, onPushUnsubscribe, onLogo
     await updateNested('notifications', { statuses: next })
   }
 
-  const visibleSections = onLogout ? sectionIds : sectionIds.filter(s => s !== 'security')
+  const showSecurity = Boolean(onLogout || isAccountsMode)
+  const visibleSections = sectionIds.filter(id => {
+    if (id === 'security') return showSecurity
+    if (isNonAdminUser && (id === 'notifications' || id === 'hosts' || id === 'agents')) return false
+    return true
+  })
   const customTheme = prefs.custom_theme || {}
   const hasCustomColors = Object.values(customTheme).some(v => !!v)
 
@@ -300,7 +360,14 @@ function SettingsContent({ pushState, onPushSubscribe, onPushUnsubscribe, onLogo
     <div className="flex-1 p-6 overflow-y-auto ui-body-text text-sm" aria-busy={saveState === 'saving' || undefined}>
       <div className="max-w-2xl">
         <div className="flex items-start justify-between gap-4 mb-5">
-          <h2 className="ui-heading-text text-2xl text-foreground">Réglages</h2>
+          <div>
+            <h2 className="ui-heading-text text-2xl text-foreground">Réglages</h2>
+            {(isNonAdminUser || isLocalOnly) && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Les préférences d’affichage sont enregistrées localement sur cet appareil.
+              </p>
+            )}
+          </div>
           <div className="min-h-7 text-right">
             {saveState === 'saving' && (
               <span className="text-xs text-primary" role="status" aria-live="polite">
@@ -563,111 +630,192 @@ function SettingsContent({ pushState, onPushSubscribe, onPushUnsubscribe, onLogo
           </Section>
 
           {/* ── Notifications ── */}
-          <Section id="notifications" title="Notifications" description="Notifications et événements des agents">
-            <Row
-              label="Notifications"
-              description={
-                pushState === 'unsupported'
-                  ? 'Nécessite HTTPS ou localhost et un navigateur compatible'
-                  : pushState === 'denied'
-                    ? 'Bloquées par le navigateur : modifiez les réglages du site'
-                    : pushState === 'subscribed'
-                      ? 'Notifications des agents activées'
-                      : 'Recevoir les alertes même lorsque l’onglet est fermé'
-              }
-            >
-              {pushState === 'unsupported' ? (
-                <span className="text-xs text-muted-foreground">Indisponible</span>
-              ) : pushState === 'denied' ? (
-                <span className="text-xs text-destructive">Bloqué</span>
-              ) : (
-                <Toggle
-                  checked={pushState === 'subscribed'}
-                  onChange={v => (v ? onPushSubscribe() : onPushUnsubscribe())}
+          {!isNonAdminUser && (
+            <Section id="notifications" title="Notifications" description="Notifications et événements des agents">
+              <Row
+                label="Notifications"
+                description={
+                  pushState === 'unsupported'
+                    ? 'Nécessite HTTPS ou localhost et un navigateur compatible'
+                    : pushState === 'denied'
+                      ? 'Bloquées par le navigateur : modifiez les réglages du site'
+                      : pushState === 'subscribed'
+                        ? 'Notifications des agents activées'
+                        : 'Recevoir les alertes même lorsque l’onglet est fermé'
+                }
+              >
+                {pushState === 'unsupported' ? (
+                  <span className="text-xs text-muted-foreground">Indisponible</span>
+                ) : pushState === 'denied' ? (
+                  <span className="text-xs text-destructive">Bloqué</span>
+                ) : (
+                  <Toggle
+                    checked={pushState === 'subscribed'}
+                    onChange={v => (v ? onPushSubscribe() : onPushUnsubscribe())}
+                  />
+                )}
+              </Row>
+              <Row label="États déclenchant une alerte" description="Choisissez les états des agents à signaler">
+                <div className="flex gap-2">
+                  {notifStatuses.map(s => (
+                    <button
+                      key={s.value}
+                      onClick={() => toggleNotifStatus(s.value)}
+                      className={cn(
+                        'px-2.5 py-1 rounded text-xs border transition-colors',
+                        prefs.notifications.statuses.includes(s.value)
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border bg-background text-muted-foreground',
+                      )}
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+              </Row>
+              <Row label="Fermeture automatique" description="Délai en secondes avant fermeture (0 = manuelle)">
+                <NumberInput
+                  value={prefs.agent_banner.auto_dismiss_seconds}
+                  onChange={v => updateNested('agent_banner', { auto_dismiss_seconds: Math.max(0, Math.min(300, v)) })}
+                  min={0}
+                  max={300}
                 />
-              )}
-            </Row>
-            <Row label="États déclenchant une alerte" description="Choisissez les états des agents à signaler">
-              <div className="flex gap-2">
-                {notifStatuses.map(s => (
-                  <button
-                    key={s.value}
-                    onClick={() => toggleNotifStatus(s.value)}
-                    className={cn(
-                      'px-2.5 py-1 rounded text-xs border transition-colors',
-                      prefs.notifications.statuses.includes(s.value)
-                        ? 'border-primary bg-primary/10 text-primary'
-                        : 'border-border bg-background text-muted-foreground',
-                    )}
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </div>
-            </Row>
-            <Row label="Fermeture automatique" description="Délai en secondes avant fermeture (0 = manuelle)">
-              <NumberInput
-                value={prefs.agent_banner.auto_dismiss_seconds}
-                onChange={v => updateNested('agent_banner', { auto_dismiss_seconds: Math.max(0, Math.min(300, v)) })}
-                min={0}
-                max={300}
-              />
-            </Row>
-          </Section>
+              </Row>
+            </Section>
+          )}
 
-          <Section id="hosts" title="Hôtes" description="Donnez un nom facile à reconnaître à chaque hôte.">
-            {hosts.length === 0 && <p className="text-xs text-muted-foreground">Aucun hôte disponible.</p>}
-            {hosts.map(host => (
-              <label key={host.id} title={host.id} className="flex min-h-11 items-center justify-between gap-4 text-sm">
-                <span className="truncate">{hostLabel(host.id, host.name === host.id ? 'Hôte' : host.name)}</span>
-                <input
-                  aria-label={`Alias de ${host.name === host.id ? 'cet hôte' : host.name}`}
-                  value={prefs.host_aliases?.[host.id] ?? ''}
-                  placeholder={host.name === host.id ? 'Hôte' : host.name}
-                  onChange={event => {
-                    const aliases = { ...prefs.host_aliases }
-                    if (event.target.value) aliases[host.id] = event.target.value
-                    else delete aliases[host.id]
-                    void update({ host_aliases: aliases })
-                  }}
-                  className="min-h-11 w-40 rounded bg-input px-2 text-sm ui-focus-ring"
-                />
-              </label>
-            ))}
-          </Section>
+          {!isNonAdminUser && (
+            <Section id="hosts" title="Hôtes" description="Donnez un nom facile à reconnaître à chaque hôte.">
+              {hosts.length === 0 && <p className="text-xs text-muted-foreground">Aucun hôte disponible.</p>}
+              {hosts.map(host => (
+                <label key={host.id} title={host.id} className="flex min-h-11 items-center justify-between gap-4 text-sm">
+                  <span className="truncate">{hostLabel(host.id, host.name === host.id ? 'Hôte' : host.name)}</span>
+                  <input
+                    aria-label={`Alias de ${host.name === host.id ? 'cet hôte' : host.name}`}
+                    value={prefs.host_aliases?.[host.id] ?? ''}
+                    placeholder={host.name === host.id ? 'Hôte' : host.name}
+                    onChange={event => {
+                      const aliases = { ...prefs.host_aliases }
+                      if (event.target.value) aliases[host.id] = event.target.value
+                      else delete aliases[host.id]
+                      void update({ host_aliases: aliases })
+                    }}
+                    className="min-h-11 w-40 rounded bg-input px-2 text-sm ui-focus-ring"
+                  />
+                </label>
+              ))}
+            </Section>
+          )}
 
           {/* ── Agents ── */}
-          <Section id="agents" title="Agents" description="Installation des agents et configuration des intégrations">
-            {agentStatus ? (
-              <div className="flex flex-col gap-3">
-                <AgentStatusList agents={agentStatus.agents} />
-                {agentStatus.setup_command ? (
-                  <SetupCommandBox command={agentStatus.setup_command} />
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    Ce Hub ne nécessite pas de configuration locale. Installez et associez un agent sur chaque hôte
-                    tmux.
-                  </p>
-                )}
-                <button
-                  onClick={fetchAgentStatus}
-                  disabled={agentLoading}
-                  className="self-start px-3 py-1.5 rounded text-xs border border-border text-foreground hover:bg-muted transition-colors disabled:opacity-50"
-                >
-                  {agentLoading ? 'Vérification…' : 'Actualiser'}
-                </button>
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                {agentLoading ? 'Vérification des agents…' : 'Impossible de charger l’état des agents.'}
-              </p>
-            )}
-          </Section>
+          {!isNonAdminUser && (
+            <Section id="agents" title="Agents" description="Installation des agents et configuration des intégrations">
+              {agentStatus ? (
+                <div className="flex flex-col gap-3">
+                  <AgentStatusList agents={agentStatus.agents} />
+                  {agentStatus.setup_command ? (
+                    <SetupCommandBox command={agentStatus.setup_command} />
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Ce Hub ne nécessite pas de configuration locale. Installez et associez un agent sur chaque hôte
+                      tmux.
+                    </p>
+                  )}
+                  <button
+                    onClick={fetchAgentStatus}
+                    disabled={agentLoading}
+                    className="self-start px-3 py-1.5 rounded text-xs border border-border text-foreground hover:bg-muted transition-colors disabled:opacity-50"
+                  >
+                    {agentLoading ? 'Vérification…' : 'Actualiser'}
+                  </button>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {agentLoading ? 'Vérification des agents…' : 'Impossible de charger l’état des agents.'}
+                </p>
+              )}
+            </Section>
+          )}
 
           {/* ── Sécurité ── */}
-          {onLogout && (
-            <Section id="security" title="Sécurité" description="Passkeys, verrouillage et déconnexion">
-              <PasskeySettings />
+          {showSecurity && (
+            <Section
+              id="security"
+              title="Sécurité"
+              description={
+                isAccountsMode
+                  ? 'Mot de passe du compte et verrouillage'
+                  : 'Passkeys, verrouillage et déconnexion'
+              }
+            >
+              {isAccountsMode ? (
+                <form onSubmit={handlePasswordChange} className="space-y-3">
+                  <div className="text-sm font-medium text-foreground">Changer le mot de passe</div>
+                  <p className="text-xs text-muted-foreground">
+                    Longueur requise : 10 à 200 caractères.
+                  </p>
+                  <div className="space-y-1">
+                    <label htmlFor="settings-old-password" className="block text-xs text-muted-foreground">
+                      Ancien mot de passe
+                    </label>
+                    <input
+                      id="settings-old-password"
+                      type="password"
+                      value={oldPassword}
+                      onChange={event => setOldPassword(event.target.value)}
+                      autoComplete="current-password"
+                      className="ui-focus-ring min-h-11 w-full rounded bg-input px-3 text-sm text-foreground"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label htmlFor="settings-new-password" className="block text-xs text-muted-foreground">
+                      Nouveau mot de passe
+                    </label>
+                    <input
+                      id="settings-new-password"
+                      type="password"
+                      value={newPassword}
+                      onChange={event => setNewPassword(event.target.value)}
+                      autoComplete="new-password"
+                      className="ui-focus-ring min-h-11 w-full rounded bg-input px-3 text-sm text-foreground"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label htmlFor="settings-confirm-password" className="block text-xs text-muted-foreground">
+                      Confirmer le nouveau mot de passe
+                    </label>
+                    <input
+                      id="settings-confirm-password"
+                      type="password"
+                      value={confirmPassword}
+                      onChange={event => setConfirmPassword(event.target.value)}
+                      autoComplete="new-password"
+                      className="ui-focus-ring min-h-11 w-full rounded bg-input px-3 text-sm text-foreground"
+                    />
+                  </div>
+                  {passwordError && (
+                    <p role="alert" className="text-xs text-destructive">
+                      {passwordError}
+                    </p>
+                  )}
+                  {passwordSuccess && (
+                    <p role="status" className="text-xs text-success">
+                      {passwordSuccess}
+                    </p>
+                  )}
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    size="sm"
+                    loading={changingPassword}
+                    loadingLabel="Enregistrement…"
+                  >
+                    Mettre à jour le mot de passe
+                  </Button>
+                </form>
+              ) : (
+                <PasskeySettings />
+              )}
               <Divider />
               <Row label="Délai de verrouillage" description="Déconnexion après inactivité (0 = désactivé)">
                 <div className="flex items-center gap-2">
@@ -699,15 +847,19 @@ function SettingsContent({ pushState, onPushSubscribe, onPushUnsubscribe, onLogo
                   </div>
                 </Row>
               )}
-              <Divider />
-              <Row label="Déconnexion" description="Terminer la session actuelle">
-                <button
-                  onClick={onLogout}
-                  className="px-3 py-1.5 rounded text-sm border border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground transition-colors"
-                >
-                  Se déconnecter
-                </button>
-              </Row>
+              {!isAccountsMode && onLogout && (
+                <>
+                  <Divider />
+                  <Row label="Déconnexion" description="Terminer la session actuelle">
+                    <button
+                      onClick={onLogout}
+                      className="px-3 py-1.5 rounded text-sm border border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground transition-colors"
+                    >
+                      Se déconnecter
+                    </button>
+                  </Row>
+                </>
+              )}
             </Section>
           )}
         </div>

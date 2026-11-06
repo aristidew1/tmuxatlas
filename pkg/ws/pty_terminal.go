@@ -13,6 +13,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/LosFurina/tmuxatlas/pkg/activity"
+	"github.com/LosFurina/tmuxatlas/pkg/auth"
 	"github.com/LosFurina/tmuxatlas/pkg/tmux"
 )
 
@@ -48,7 +49,7 @@ type resizeMsg struct {
 // Query params: name=<session>, cols=<cols>, rows=<rows>
 func (h *PTYTerminalHandler) HandleSession(w http.ResponseWriter, r *http.Request) {
 	sessionName := r.URL.Query().Get("name")
-	if sessionName == "" {
+	if sessionName == "" || sessionName == tmux.ControlSessionName() {
 		http.Error(w, "missing session name", http.StatusBadRequest)
 		return
 	}
@@ -68,6 +69,8 @@ func (h *PTYTerminalHandler) HandleSession(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	defer conn.Close()
+	stopRevocation := closeOnAccountRevocation(conn, r)
+	defer stopRevocation()
 	conn.SetReadLimit(64 << 10)
 	conn.SetReadDeadline(time.Now().Add(45 * time.Second))
 	conn.SetPongHandler(func(string) error {
@@ -95,8 +98,10 @@ func (h *PTYTerminalHandler) HandleSession(w http.ResponseWriter, r *http.Reques
 	log.Info("session ws client connected")
 
 	micID := r.URL.Query().Get("mic")
+	identity, account := auth.AccountFromContext(r.Context())
+	allowVoice := !account || identity.User.Role == "admin"
 	useSession := func() {
-		if h.OnSessionUse != nil && micID != "" {
+		if allowVoice && h.OnSessionUse != nil && micID != "" {
 			h.OnSessionUse(sessionName, micID)
 		}
 	}
@@ -175,7 +180,7 @@ func (h *PTYTerminalHandler) HandleSession(w http.ResponseWriter, r *http.Reques
 					sendResult(err)
 				}
 			}
-			if msg.Type == "voice-hold" {
+			if msg.Type == "voice-hold" && allowVoice {
 				if msg.On {
 					useSession()
 					hold.Start()

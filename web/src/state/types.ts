@@ -23,10 +23,18 @@ export interface SessionState {
   host_key: string
   host_id: string
   name: string
+  owner?: string | null
   tmux_id?: string
   attached: boolean
   created?: string
   last_activity?: string
+}
+
+export interface FreeSessionState {
+  key?: string
+  host: string
+  name: string
+  owner?: string | null
 }
 
 export interface WindowState {
@@ -87,7 +95,7 @@ export interface HealthState {
 
 export interface Projection {
   hosts: Record<string, HostState>
-  sessions: Record<string, SessionState>
+  sessions: Record<string, SessionState | FreeSessionState>
   windows: Record<string, WindowState>
   panes: Record<string, PaneState>
   tool_events: Record<string, ToolEventState>
@@ -107,7 +115,7 @@ export interface SnapshotEnvelope {
 export type StateOperation =
   | { kind: 'upsert-host'; host: HostState }
   | { kind: 'remove-host'; key: string }
-  | { kind: 'upsert-session'; session: SessionState }
+  | { kind: 'upsert-session'; session: SessionState | FreeSessionState }
   | { kind: 'remove-session'; key: string }
   | { kind: 'upsert-window'; window: WindowState }
   | { kind: 'remove-window'; key: string }

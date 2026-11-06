@@ -59,6 +59,10 @@ export function runtimeErrorMessage(code: string): string {
       return 'Cette demande entre en conflit avec une action précédente.'
     case 'resource-exhausted':
       return 'L’hôte ne peut pas conserver un autre résultat pour le moment.'
+    case 'already-owned':
+      return 'Cette session vient d’être attribuée à un autre compte.'
+    case 'not-owner':
+      return 'Vous n’êtes plus propriétaire de cette session.'
     default:
       return 'L’action sur la session a échoué.'
   }

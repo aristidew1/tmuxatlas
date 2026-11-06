@@ -43,6 +43,7 @@ export interface TerminalProps {
   onOpenAlerts?: () => void
   sessionStatus?: WorkspaceStatus
   sessionName: string
+  ownerName?: string | null
   hostId: string
   hostName?: string
   windowLabel?: string
@@ -56,6 +57,8 @@ export interface TerminalProps {
   zenMode?: boolean
   /** The session runs on the machine serving this page, where the virtual microphone lives. */
   hostLocal?: boolean
+  /** Whether voice/microphone features are allowed for the current user role. */
+  voiceAllowed?: boolean
   /** Claude Code runs in the pane this Terminal has active. */
   claudeActive?: boolean
   /** Where the talk button renders; it is absent while the status bar is hidden. */
@@ -92,6 +95,7 @@ export function Terminal({
   onOpenAlerts,
   sessionStatus,
   sessionName,
+  ownerName,
   hostId,
   hostName,
   windowLabel,
@@ -104,6 +108,7 @@ export function Terminal({
   fullscreen,
   zenMode,
   hostLocal,
+  voiceAllowed = true,
   claudeActive,
   talkSlot,
   onToggleFullscreen,
@@ -160,7 +165,7 @@ export function Terminal({
     findPrevious,
     clearSearch,
   } = useTerminal(sessionName, hostId, input)
-  const mic = useMicStream(Boolean(hostLocal && !embedded))
+  const mic = useMicStream(Boolean(hostLocal && !embedded && voiceAllowed))
   const toggleMic = useCallback(() => {
     mic.toggle()
     focus()
@@ -487,6 +492,7 @@ export function Terminal({
           attentionCount={attentionCount}
           onOpenAlerts={onOpenAlerts}
           sessionName={sessionName}
+          ownerName={ownerName}
           windowLabel={windowLabel}
           paneLabel={paneLabel}
           toolStatus={toolStatus}

@@ -28,10 +28,17 @@ export interface Session {
   host: string         // immutable host fingerprint
   host_name?: string   // peer display name
   host_online?: boolean
+  owner?: string | null
   windows: Window[]
   created: string
   attached: boolean
   last_activity: string
+}
+
+export interface FreeSession {
+  host: string
+  name: string
+  owner?: null
 }
 
 // Unique key for a session across hosts

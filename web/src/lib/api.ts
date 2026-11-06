@@ -14,7 +14,11 @@ export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {})
   if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && csrfToken) {
     headers.set('X-TmuxAtlas-CSRF', csrfToken)
   }
-  const response = await browserFetch(input, { ...init, headers })
+  const underlyingFetch =
+    typeof window.fetch === 'function' && window.fetch !== apiFetch
+      ? window.fetch.bind(window)
+      : browserFetch
+  const response = await underlyingFetch(input, { ...init, headers })
   if (response.status === 401) {
     const url = typeof input === 'string' ? input : input instanceof Request ? input.url : input.toString()
     if (!url.includes('/api/auth/')) {

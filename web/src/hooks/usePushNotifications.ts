@@ -39,7 +39,7 @@ export async function unsubscribePushEverywhere(
   return { hub: true, browser: await subscription.unsubscribe() }
 }
 
-export function usePushNotifications() {
+export function usePushNotifications(enabled = true) {
   const [state, setState] = useState<PushState>('unsupported')
   const generationRef = useRef(0)
 
@@ -47,7 +47,7 @@ export function usePushNotifications() {
 
   const reconcile = useCallback(async () => {
     const generation = ++generationRef.current
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    if (!enabled || !('serviceWorker' in navigator) || !('PushManager' in window)) {
       setState('unsupported')
       return false
     }
@@ -73,7 +73,7 @@ export function usePushNotifications() {
       if (generation === generationRef.current) setState('error')
     }
     return false
-  }, [getRegistration])
+  }, [enabled, getRegistration])
 
   useEffect(() => {
     void reconcile()

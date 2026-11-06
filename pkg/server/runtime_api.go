@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/LosFurina/tmuxatlas/pkg/auth"
 	"github.com/LosFurina/tmuxatlas/pkg/peer"
+	"github.com/LosFurina/tmuxatlas/pkg/tmux"
 )
 
 type runtimeActionExecutor interface {
@@ -21,7 +23,11 @@ func handleSessionNew(w http.ResponseWriter, r *http.Request, router runtimeActi
 		Agent   string `json:"agent,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil || router == nil {
-		writeRuntimeError(w, peer.RuntimeError{Code: peer.ErrorInvalidTarget})
+		writeRuntimeError(w, peer.RuntimeError{Code: peer.ErrorInvalidTarget, Message: "requête invalide"})
+		return
+	}
+	if err := tmux.ValidateSessionName(request.Session); err != nil {
+		writeRuntimeError(w, peer.RuntimeError{Code: peer.ErrorInvalidTarget, Message: err.Error()})
 		return
 	}
 	if request.Agent != "" {
@@ -31,6 +37,10 @@ func handleSessionNew(w http.ResponseWriter, r *http.Request, router runtimeActi
 		}
 	}
 	newParams := map[string]string{}
+	if identity, ok := auth.AccountFromContext(r.Context()); ok {
+		newParams["owner"] = identity.User.ID
+		newParams["owner_name"] = identity.User.Username
+	}
 	if request.Cwd != "" {
 		newParams["cwd"] = request.Cwd
 	}
@@ -54,8 +64,12 @@ func handleSessionRename(w http.ResponseWriter, r *http.Request, router runtimeA
 		Session string `json:"session"`
 		NewName string `json:"new_name"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.NewName == "" || router == nil {
-		writeRuntimeError(w, peer.RuntimeError{Code: peer.ErrorInvalidTarget})
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil || router == nil {
+		writeRuntimeError(w, peer.RuntimeError{Code: peer.ErrorInvalidTarget, Message: "requête invalide"})
+		return
+	}
+	if err := tmux.ValidateSessionName(request.NewName); err != nil {
+		writeRuntimeError(w, peer.RuntimeError{Code: peer.ErrorInvalidTarget, Message: err.Error()})
 		return
 	}
 	payload, _ := json.Marshal(map[string]string{"new_name": request.NewName})
@@ -203,6 +217,10 @@ func refreshLocalSessionState(opts *Options, hostID string) {
 	}
 	if fresh, err := opts.Client.ListSessions(); err == nil {
 		opts.StateMgr.UpdateSessions(fresh)
+		opts.PeerMgr.UpdatePeerSessions(hostID, opts.StateMgr.GetSessions())
+		if opts.StateCoordinator != nil {
+			_, _ = opts.StateCoordinator.ReplaceHosts(context.Background(), opts.PeerMgr.StateHostSnapshots())
+		}
 	}
 }
 

@@ -479,6 +479,30 @@ func (m *Manager) UpdatePeerSessions(id string, sessions []*tmux.Session) {
 	}
 }
 
+// UpdateKnownOwner applies the result of a successful ownership action before
+// the next agent snapshot arrives. The cached session is replaced, not mutated
+// in place, because readers may already hold references to the old value.
+func (m *Manager) UpdateKnownOwner(hostID, name string, owner tmux.Owner) {
+	m.mu.Lock()
+	host := m.hosts[hostID]
+	found := false
+	if host != nil {
+		for i, session := range host.Sessions {
+			if session != nil && session.Name == name {
+				copy := cloneTmuxSession(session)
+				copy.Owner = owner
+				host.Sessions[i] = copy
+				found = true
+				break
+			}
+		}
+	}
+	m.mu.Unlock()
+	if found {
+		m.broadcast(state.StateEvent{Type: "sessions-changed", Host: hostID})
+	}
+}
+
 // UpdatePeerVersion updates a peer's reported version
 func (m *Manager) UpdatePeerVersion(id, version string) {
 	m.mu.Lock()

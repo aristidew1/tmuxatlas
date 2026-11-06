@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
-import { Bell, PanelLeft, Plus, Search, Settings } from 'lucide-react'
+import { Bell, LogOut, PanelLeft, Plus, Search, Settings } from 'lucide-react'
+import type { AccountRole, AuthMode } from '../hooks/useAuth'
 import type { ToolEvent } from '../hooks/useToolEvents'
 import { usePreferences } from '../hooks/usePreferences'
 import { formatShortcut } from '../commands/registry'
@@ -9,12 +10,17 @@ import { Kbd, Menu, StatusIcon } from './ui'
 interface TopBarProps {
   currentView: string
   sidebarCollapsed: boolean
+  role?: AccountRole | null
+  authMode?: AuthMode
+  username?: string | null
   onToggleCollapse: () => void
   onOverview: () => void
   onMonitoring: () => void
   onWall: () => void
+  onAdmin?: () => void
   onOpenPalette: () => void
   onSettings: () => void
+  onLogout?: () => void
   onNewSession?: () => void
   events: ToolEvent[]
   onJumpToSession: (session: string, windowIndex?: number, pane?: string) => void
@@ -36,12 +42,16 @@ function relativeTime(timestamp: string) {
 export function TopBar({
   currentView,
   sidebarCollapsed,
+  role,
+  authMode,
   onToggleCollapse,
   onOverview,
   onMonitoring,
   onWall,
+  onAdmin,
   onOpenPalette,
   onSettings,
+  onLogout,
   onNewSession,
   events,
   onJumpToSession,
@@ -76,11 +86,12 @@ export function TopBar({
   const button =
     'ui-focus-ring flex min-h-11 min-w-11 items-center justify-center gap-2 rounded px-2 ' +
     'text-muted-foreground hover:bg-secondary hover:text-foreground md:min-h-8 md:min-w-8'
-  const navigation = [
+  const navigation: Array<readonly [string, string, () => void]> = [
     ['overview', 'Vue d’ensemble', onOverview],
     ['wall', 'Mur', onWall],
-    ['monitoring', 'Monitoring', onMonitoring],
-  ] as const
+    ...(role !== 'user' ? ([['monitoring', 'Monitoring', onMonitoring]] as const) : []),
+    ...(role === 'admin' && onAdmin ? ([['admin', 'Administration', onAdmin]] as const) : []),
+  ]
   const alertColor = actionable.some(event => event.status === 'error')
     ? 'text-destructive'
     : actionable.length
@@ -218,6 +229,18 @@ export function TopBar({
       >
         <Settings size={16} aria-hidden />
       </button>
+      {authMode === 'accounts' && onLogout && (
+        <button
+          type="button"
+          className={button}
+          onClick={onLogout}
+          aria-label="Se déconnecter"
+          title="Se déconnecter"
+        >
+          <LogOut size={16} aria-hidden />
+          <span className="hidden lg:inline">Se déconnecter</span>
+        </button>
+      )}
     </header>
   )
 }

@@ -3,6 +3,7 @@ import type { Host } from '../hooks/useHosts'
 import type { Session } from '../hooks/useSessions'
 import { sessionKey } from '../hooks/useSessions'
 import type { ToolEvent } from '../hooks/useToolEvents'
+import { resolveOwnerName } from '../lib/accountsApi'
 
 export type WorkspaceStatus = 'running' | 'waiting' | 'idle' | 'done' | 'error' | 'offline'
 
@@ -11,6 +12,8 @@ export interface WorkspaceSession {
   hostId: string
   hostName: string
   name: string
+  owner?: string | null
+  ownerName?: string | null
   status: WorkspaceStatus
   lastActivity: string | null
   agents: string[]
@@ -82,6 +85,7 @@ export function buildWorkspaceViewModel(
   toolEvents: ToolEvent[],
   activity: Map<string, ActivitySnapshot>,
   hosts: Host[] = [],
+  ownerResolver: (owner: string | null | undefined) => string | null = owner => resolveOwnerName(owner),
 ): WorkspaceViewModel {
   const hostById = new Map(hosts.map(host => [host.id, host]))
   const viewSessions = sessions
@@ -90,6 +94,7 @@ export function buildWorkspaceViewModel(
       const events = toolEvents.filter(event => event.host === session.host && event.session === session.name)
       const host = hostById.get(session.host)
       const hostName = session.host_name || host?.name || session.host
+      const ownerName = ownerResolver(session.owner)
       const agents = [...new Set(events.map(event => event.tool).filter(Boolean))].sort()
       const lastActivity = newestTimestamp([session.last_activity, ...events.map(event => event.timestamp)])
       const status = deriveSessionStatus(session, events)
@@ -98,6 +103,7 @@ export function buildWorkspaceViewModel(
         session.host,
         hostName,
         session.name,
+        ownerName || '',
         status,
         ...agents,
         ...session.windows.flatMap(window => [window.name, ...window.panes.map(pane => pane.current_command)]),
@@ -110,6 +116,8 @@ export function buildWorkspaceViewModel(
         hostId: session.host,
         hostName,
         name: session.name,
+        owner: session.owner ?? null,
+        ownerName,
         status,
         lastActivity,
         agents,

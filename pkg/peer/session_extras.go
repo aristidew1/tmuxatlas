@@ -90,9 +90,14 @@ func resolveCwd(cwd string) (string, error) {
 }
 
 func newSession(client *tmux.Client, target SessionTarget, payload json.RawMessage) (json.RawMessage, error) {
+	if err := tmux.ValidateSessionName(target.Session); err != nil {
+		return nil, invalid(err.Error())
+	}
 	var params struct {
-		Cwd   string `json:"cwd"`
-		Agent string `json:"agent"`
+		Cwd       string  `json:"cwd"`
+		Agent     string  `json:"agent"`
+		Owner     string  `json:"owner"`
+		OwnerName *string `json:"owner_name"`
 	}
 	if len(payload) > 0 && json.Unmarshal(payload, &params) != nil {
 		return nil, invalid("invalid new payload")
@@ -109,7 +114,15 @@ func newSession(client *tmux.Client, target SessionTarget, payload json.RawMessa
 			return nil, err
 		}
 	}
-	if cwd == "" {
+	if params.Owner != "" {
+		names := []string{}
+		if params.OwnerName != nil {
+			names = append(names, *params.OwnerName)
+		}
+		if err := client.NewOwnedSession(target.Session, cwd, params.Owner, names...); err != nil {
+			return nil, err
+		}
+	} else if cwd == "" {
 		if err := client.NewSession(target.Session); err != nil {
 			return nil, err
 		}
@@ -117,7 +130,7 @@ func newSession(client *tmux.Client, target SessionTarget, payload json.RawMessa
 		return nil, err
 	}
 	if params.Agent != "" {
-		exact := "=" + target.Session + ":"
+		exact := tmux.ExactWindow(target.Session, "")
 		if err := client.SendLiteral(exact, params.Agent); err != nil {
 			return nil, err
 		}
@@ -135,7 +148,11 @@ type sessionPane struct {
 }
 
 func sessionPanes(client *tmux.Client, session string) ([]sessionPane, error) {
-	out, err := client.Exec("list-panes", "-s", "-t", "="+session+":", "-F",
+	target, err := client.WindowTarget(session, "")
+	if err != nil {
+		return nil, RuntimeError{Code: ErrorNotFound}
+	}
+	out, err := client.Exec("list-panes", "-s", "-t", target, "-F",
 		"#{pane_id} #{window_index} #{pane_active} #{window_active}")
 	if err != nil {
 		return nil, RuntimeError{Code: ErrorNotFound}
@@ -332,4 +349,32 @@ func listDirectories() (json.RawMessage, error) {
 		entries = entries[:maxDirectories]
 	}
 	return json.Marshal(map[string]any{"directories": entries})
+}
+
+// requiresOwnership prevents older agents from silently ignoring ownership.
+func requiresOwnership(operation string, payload json.RawMessage) bool {
+	if operation == "claim" || operation == "release" || operation == "owner" {
+		return true
+	}
+	if operation == "new" {
+		var params struct {
+			Owner string `json:"owner"`
+		}
+		_ = json.Unmarshal(payload, &params)
+		return params.Owner != ""
+	}
+	return false
+}
+
+// requiresOwnerName prevents an older Agent from silently discarding the name.
+func requiresOwnerName(operation string, payload json.RawMessage) bool {
+	if operation != "new" && operation != "claim" && operation != "release" {
+		return false
+	}
+	var params map[string]json.RawMessage
+	if json.Unmarshal(payload, &params) != nil {
+		return false
+	}
+	_, ok := params["owner_name"]
+	return ok
 }

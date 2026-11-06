@@ -59,8 +59,10 @@ func (pm *PTYManager) Open(request PTYOpenPayload) {
 	log := logrus.WithFields(logrus.Fields{"stream": request.StreamID, "session": request.Target.Session})
 	if request.StreamID == "" || request.AttachToken == "" || request.Generation == 0 ||
 		request.Cols == 0 || request.Rows == 0 || request.Target.Validate() != nil ||
+		request.Target.Session == tmux.ControlSessionName() ||
 		request.Target.HostID != pm.client.peerMgr.LocalID() ||
-		request.Generation != pm.client.RuntimeGeneration() {
+		request.Generation != pm.client.RuntimeGeneration() ||
+		(pm.client.peerMgr.localMgr != nil && !pm.client.peerMgr.HasSession(request.Target.HostID, request.Target.Session)) {
 		log.Warn("rejected invalid or stale PTY open")
 		return
 	}

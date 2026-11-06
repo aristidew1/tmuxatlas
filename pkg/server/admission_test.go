@@ -65,3 +65,39 @@ func TestWebSocketCategoryAdmissionIsolationAndRecovery(t *testing.T) {
 		t.Fatalf("terminal slot did not recover: %d", rec.Code)
 	}
 }
+
+func TestAdmissionUsesRealClientBehindLocalProxy(t *testing.T) {
+	config := ingress.DefaultConfig()
+	policy, err := ingress.NewPolicy(config, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := admissionMiddleware(policy, ingress.CategoryWebAuthn)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }))
+	call := func(remote, forwarded string) int {
+		r := httptest.NewRequest("POST", "/", nil)
+		r.RemoteAddr = remote
+		r.Header.Set("X-Forwarded-For", forwarded)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code
+	}
+	for i := 0; i < 8; i++ {
+		if got := call("127.0.0.1:44", "203.0.113.1, 127.0.0.1"); got != 204 {
+			t.Fatal(got)
+		}
+	}
+	if got := call("127.0.0.1:44", "203.0.113.1"); got != 429 {
+		t.Fatal(got)
+	}
+	if got := call("127.0.0.1:44", "203.0.113.2"); got != 204 {
+		t.Fatal(got)
+	}
+	for i := 0; i < 8; i++ {
+		if got := call("192.0.2.1:44", "203.0.113.3"); got != 204 {
+			t.Fatal(got)
+		}
+	}
+	if got := call("192.0.2.1:44", "203.0.113.4"); got != 429 {
+		t.Fatal(got)
+	}
+}

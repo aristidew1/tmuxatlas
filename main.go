@@ -22,6 +22,7 @@ import (
 	_ "github.com/LosFurina/tmuxatlas/pkg/commands/peers"
 	_ "github.com/LosFurina/tmuxatlas/pkg/commands/server"
 	_ "github.com/LosFurina/tmuxatlas/pkg/commands/update"
+	_ "github.com/LosFurina/tmuxatlas/pkg/commands/users"
 )
 
 func main() {

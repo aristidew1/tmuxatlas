@@ -10,6 +10,7 @@ import {
   MoreHorizontal,
   Search,
   Sparkles,
+  User,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react'
@@ -26,6 +27,7 @@ export interface TerminalCockpitMic {
 interface Props {
   hostLabel: string
   sessionName: string
+  ownerName?: string | null
   windowLabel?: string
   paneLabel?: string
   toolStatus?: string
@@ -134,6 +136,15 @@ export function TerminalCockpit(p: Props) {
         <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
           <span className="hidden truncate text-muted-foreground md:inline">{p.hostLabel} /</span>
           <span className="truncate">{p.sessionName}</span>
+          {p.ownerName && (
+            <span
+              data-testid="terminal-owner-badge"
+              className="inline-flex shrink-0 items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-2xs text-muted-foreground"
+            >
+              <User size={12} aria-hidden="true" />
+              <span>{p.ownerName}</span>
+            </span>
+          )}
           {p.sessionStatus && (
             <>
               <StatusIcon status={p.sessionStatus} className="md:hidden" />

@@ -19,7 +19,8 @@ import { usePushNotifications } from './hooks/usePushNotifications'
 import { usePWAInstall, type PWAInstallState } from './hooks/usePWAInstall'
 import { usePreferencesProvider, usePreferences, PreferencesContext } from './hooks/usePreferences'
 import { useVisualViewportVariables } from './hooks/useVisualViewport'
-import { useAuth } from './hooks/useAuth'
+import { useAuth, type AccountRole, type AuthMode } from './hooks/useAuth'
+import { fetchAdminUsers, resolveOwnerName, type AccountUser } from './lib/accountsApi'
 import { applyTheme } from './theme'
 import { getBrandStorage, setBrandStorage } from './lib/brandStorage'
 import { isEditingOutsideTerminal } from './lib/focusGuard'
@@ -51,14 +52,17 @@ function errorMessage(err: unknown): string {
           'execution-unknown': 'Résultat inconnu. Vérifiez la session avant de réessayer.',
           'request-conflict': 'Cette demande entre en conflit avec une action précédente.',
           'resource-exhausted': 'L’hôte ne peut pas conserver un autre résultat.',
+          'already-owned': 'Cette session vient d’être attribuée à un autre compte.',
+          'not-owner': 'Vous n’êtes plus propriétaire de cette session.',
         } as Record<string, string>
       )[err.code] || 'L’action sur la session a échoué.'
     )
   return 'L’action sur la session a échoué.'
 }
 
-type View = 'overview' | 'session' | 'settings' | 'setup' | 'monitoring' | 'wall'
+type View = 'overview' | 'session' | 'settings' | 'setup' | 'monitoring' | 'wall' | 'admin'
 
+const AdminPage = lazy(() => import('./components/AdminPage').then(module => ({ default: module.AdminPage })))
 const MonitoringPage = lazy(() =>
   import('./components/monitoring/MonitoringPage').then(module => ({ default: module.MonitoringPage })),
 )
@@ -76,6 +80,7 @@ const Setup = lazy(() => import('./components/Setup').then(module => ({ default:
 const Terminal = lazy(() => import('./components/Terminal').then(module => ({ default: module.Terminal })))
 
 function getViewFromPath(): { view: View; sessionKey: string | null } {
+  if (window.location.pathname === '/admin') return { view: 'admin', sessionKey: null }
   if (window.location.pathname === '/monitoring') return { view: 'monitoring', sessionKey: null }
   if (window.location.pathname === '/wall') return { view: 'wall', sessionKey: null }
   if (window.location.pathname === '/settings') {
@@ -94,15 +99,78 @@ function getViewFromPath(): { view: View; sessionKey: string | null } {
   return { view: 'overview', sessionKey: null }
 }
 
-function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall: PWAInstallState }) {
+function AppInner({
+  authMode,
+  role,
+  username,
+  onLogout,
+  onCheckAuthStatus,
+  pwaInstall,
+}: {
+  authMode: AuthMode
+  role: AccountRole | null
+  username: string | null
+  onLogout?: () => void
+  onCheckAuthStatus?: () => Promise<boolean>
+  pwaInstall: PWAInstallState
+}) {
   const {
     state: applicationState,
     sessions,
+    freeSessions,
     hosts,
     toolEvents: allToolEvents,
     activity,
     rehydrate,
   } = useApplicationState()
+  const [adminUsers, setAdminUsers] = useState<AccountUser[]>([])
+  const usersById = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const user of adminUsers) {
+      map.set(user.id, user.username)
+    }
+    return map
+  }, [adminUsers])
+
+  useEffect(() => {
+    if (role !== 'admin') return
+    let cancelled = false
+    fetchAdminUsers()
+      .then(loaded => {
+        if (!cancelled) setAdminUsers(loaded)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [role])
+
+  useEffect(() => {
+    if (role !== 'admin') return
+    const hasUnknownOwner = sessions.some(
+      session => Boolean(session.owner) && !usersById.has(session.owner!),
+    )
+    if (!hasUnknownOwner) return
+    let cancelled = false
+    fetchAdminUsers()
+      .then(loaded => {
+        if (!cancelled) setAdminUsers(loaded)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [role, sessions, usersById])
+
+  useEffect(() => {
+    if (
+      authMode === 'accounts' &&
+      (applicationState.connection === 'reconnecting' || applicationState.connection === 'auth-required')
+    ) {
+      void onCheckAuthStatus?.()
+    }
+  }, [applicationState.connection, authMode, onCheckAuthStatus])
+
   const refresh = useCallback(async () => {
     rehydrate()
   }, [rehydrate])
@@ -131,9 +199,14 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
     })
   }, [])
   const dismissAllEvents = useCallback(async () => {
+    if (role === 'user') {
+      const actionable = allToolEvents.filter(event => event.status === 'waiting' || event.status === 'error')
+      await Promise.all(actionable.map(event => dismissEvent(event)))
+      return
+    }
     await fetch('/api/tool-events', { method: 'DELETE' })
-  }, [])
-  const { pushState, subscribe: pushSubscribe, unsubscribe: pushUnsubscribe } = usePushNotifications()
+  }, [allToolEvents, dismissEvent, role])
+  const { pushState, subscribe: pushSubscribe, unsubscribe: pushUnsubscribe } = usePushNotifications(role !== 'user')
   const { processToolEvent } = useNotifications(pushState === 'subscribed')
   const [currentView, setCurrentView] = useState<View>(() => getViewFromPath().view)
   const [selectedSession, setSelectedSession] = useState<string | null>(() => getViewFromPath().sessionKey)
@@ -158,9 +231,18 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
   const { prefs, loaded: preferencesLoaded } = usePreferences()
   const workspacePreferences = useWorkspacePreferences()
   const terminalDrafts = useTerminalDrafts()
+  const resolveOwner = useCallback(
+    (owner: string | null | undefined) =>
+      resolveOwnerName(owner, {
+        usersById,
+        currentUsername: username,
+        currentRole: role,
+      }),
+    [role, username, usersById],
+  )
   const workspace = useMemo(
-    () => buildWorkspaceViewModel(sessions, allToolEvents, activity, hosts),
-    [sessions, allToolEvents, activity, hosts],
+    () => buildWorkspaceViewModel(sessions, allToolEvents, activity, hosts, resolveOwner),
+    [sessions, allToolEvents, activity, hosts, resolveOwner],
   )
 
   useEffect(() => {
@@ -264,7 +346,7 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
   const navigateTo = useCallback(
     (sessKey: string | null, view?: View) => {
       let path: string
-      if (view === 'monitoring' || view === 'wall') {
+      if (view === 'monitoring' || view === 'wall' || view === 'admin') {
         path = `/${view}`
       } else if (view === 'settings') {
         path = '/settings'
@@ -321,17 +403,32 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
     workspacePreferences.recent,
   ])
 
-  // If selected session was removed, go back to overview
+  // Redirect forbidden views for current role
+  useEffect(() => {
+    if (currentView === 'admin' && role !== 'admin') {
+      navigateTo(null)
+      return
+    }
+    if (role === 'user' && (currentView === 'monitoring' || currentView === 'setup')) {
+      navigateTo(null)
+    }
+  }, [currentView, navigateTo, role])
+
+  // If selected session was removed or is not owned by the current user, go back to overview
   // (don't bounce if we're waiting for a newly created session to appear)
   useEffect(() => {
     if (pendingSessionRef.current && sessions.some(s => sessionKey(s) === pendingSessionRef.current)) {
       pendingSessionRef.current = null
     }
     if (selectedSession && selectedSession === pendingSessionRef.current) return
-    if (selectedSession && sessions.length > 0 && !sessions.find(s => sessionKey(s) === selectedSession)) {
+    if (
+      selectedSession &&
+      (sessions.length > 0 || (authMode === 'accounts' && applicationState.connection === 'ready')) &&
+      !sessions.find(s => sessionKey(s) === selectedSession)
+    ) {
       navigateTo(null)
     }
-  }, [sessions, selectedSession, navigateTo])
+  }, [applicationState.connection, authMode, sessions, selectedSession, navigateTo])
 
   const handleSessionSelect = (session: Session) => {
     setMobileSidebarOpen(false)
@@ -505,8 +602,11 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
       },
       'navigation.overview': () => navigateTo(null),
       'navigation.settings': navigateToSettings,
-      'navigation.monitoring': () => navigateTo(null, 'monitoring'),
+      'navigation.monitoring': () => {
+        if (role !== 'user') navigateTo(null, 'monitoring')
+      },
       'navigation.wall': () => navigateTo(null, 'wall'),
+      ...(role === 'admin' ? { 'navigation.admin': () => navigateTo(null, 'admin') } : {}),
       'session.next': () => moveSession(1),
       'session.previous': () => moveSession(-1),
       ...Object.fromEntries(
@@ -537,6 +637,7 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
       openNewSessionModal,
       toggleFullscreen,
       toggleZen,
+      role,
     ],
   )
 
@@ -548,11 +649,13 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
           canReconnect: showingTerminal,
           canSignOut: Boolean(onLogout),
           hasAttention: allToolEvents.some(event => event.status === 'waiting' || event.status === 'error'),
+          canMonitor: role !== 'user',
+          isAdmin: role === 'admin',
         },
         handlers: commandHandlers,
         quickSwitcherShortcut: prefs.quick_switcher_shortcut,
       }),
-    [allToolEvents, commandHandlers, onLogout, prefs.quick_switcher_shortcut, showingTerminal],
+    [allToolEvents, commandHandlers, onLogout, prefs.quick_switcher_shortcut, role, showingTerminal],
   )
 
   useEffect(() => {
@@ -605,6 +708,8 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
       }
     } else if (currentView === 'settings') {
       document.title = 'Réglages — Atlas'
+    } else if (currentView === 'admin') {
+      document.title = 'Administration — Atlas'
     } else {
       document.title =
         currentView === 'monitoring' ? 'Monitoring — Atlas' : currentView === 'wall' ? 'Mur — Atlas' : 'Atlas'
@@ -681,6 +786,9 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
           <TopBar
             currentView={currentView}
             sidebarCollapsed={sidebarCollapsed}
+            role={role}
+            authMode={authMode}
+            username={username}
             onToggleCollapse={() => {
               if (window.matchMedia('(max-width: 1023px)').matches) setMobileSidebarOpen(open => !open)
               else setSidebarCollapsed(c => !c)
@@ -688,8 +796,10 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
             onOverview={() => navigateTo(null)}
             onMonitoring={() => navigateTo(null, 'monitoring')}
             onWall={() => navigateTo(null, 'wall')}
+            onAdmin={role === 'admin' ? () => navigateTo(null, 'admin') : undefined}
             onOpenPalette={() => setQuickSwitcherOpen(true)}
             onSettings={navigateToSettings}
+            onLogout={onLogout}
             onNewSession={openNewSessionModal}
             events={allToolEvents}
             onJumpToSession={jumpToSession}
@@ -739,7 +849,13 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
               </div>
             }
           >
-            {currentView === 'setup' ? (
+            {currentView === 'admin' && role === 'admin' ? (
+              <AdminPage
+                currentUsername={username}
+                liveSessions={sessions}
+                onUsersChanged={setAdminUsers}
+              />
+            ) : currentView === 'setup' && role !== 'user' ? (
               <Setup onComplete={() => navigateTo(null)} />
             ) : currentView === 'settings' ? (
               <Settings
@@ -747,13 +863,15 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
                 onPushSubscribe={pushSubscribe}
                 onPushUnsubscribe={pushUnsubscribe}
                 onLogout={onLogout}
+                authMode={authMode}
+                role={role}
                 pwaInstall={pwaInstall}
               />
-            ) : currentView === 'monitoring' ? (
+            ) : currentView === 'monitoring' && role !== 'user' ? (
               <MonitoringPage hosts={hosts} />
             ) : currentView === 'wall' ? (
               <WallView workspace={workspace} onOpenSession={(key: string) => void jumpToSession(key)} />
-            ) : selectedSession ? (
+            ) : selectedSession && (role !== 'user' || activeSession || selectedSession === pendingSessionRef.current) ? (
               <div ref={terminalContainerRef} className="flex-1 flex flex-col overflow-hidden">
                 <Terminal
                   windows={activeSession?.windows}
@@ -784,6 +902,10 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
                   onOpenAlerts={() => navigateTo(null)}
                   sessionStatus={workspace.byTarget.get(selectedSession)?.status}
                   sessionName={parseSessionKey(selectedSession).name}
+                  ownerName={
+                    workspace.byTarget.get(selectedSession)?.ownerName ??
+                    resolveOwner(activeSession?.owner)
+                  }
                   hostId={parseSessionKey(selectedSession).host}
                   hostName={activeHost?.name || activeSession?.host_name}
                   windowLabel={activeWindow ? `${activeWindow.index}:${activeWindow.name}` : undefined}
@@ -795,6 +917,7 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
                   fullscreen={terminalFullscreen}
                   zenMode={zenMode}
                   hostLocal={activeHost?.local === true}
+                  voiceAllowed={role !== 'user'}
                   claudeActive={activePane?.current_command === 'claude'}
                   talkSlot={statusBarSlot}
                   onToggleFullscreen={toggleFullscreen}
@@ -804,12 +927,16 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
                   terminalDrafts={terminalDrafts}
                 />
               </div>
-            ) : applicationState.connection === 'ready' && sessions.length === 0 ? (
+            ) : applicationState.connection === 'ready' && sessions.length === 0 && role !== 'user' ? (
               <EmptyWorkspaceState onNewSession={openNewSessionModal} onOpenSetup={() => navigateTo(null, 'setup')} />
             ) : (
               <Overview
                 sessions={sessions}
+                freeSessions={freeSessions}
                 hosts={hosts}
+                role={role}
+                currentUsername={username}
+                usersById={usersById}
                 onSessionSelect={handleSessionSelect}
                 getSessionEvents={getSessionEvents}
                 getSessionActivity={getSessionActivity}
@@ -817,6 +944,7 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
                 onJumpToSession={jumpToSession}
                 onDismissAlert={dismissEvent}
                 onOpenMonitoring={() => navigateTo(null, 'monitoring')}
+                onCreateSession={openNewSessionModal}
               />
             )}
           </Suspense>
@@ -826,9 +954,11 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
         <MobileNav
           currentView={currentView}
           attentionCount={attentionCount}
+          role={role}
           onOverview={() => navigateTo(null)}
           onSessions={() => setMobileSidebarOpen(true)}
           onMonitoring={() => navigateTo(null, 'monitoring')}
+          onAdmin={role === 'admin' ? () => navigateTo(null, 'admin') : undefined}
           onSettings={navigateToSettings}
         />
       )}
@@ -855,20 +985,25 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
 
 export default function App() {
   useVisualViewportVariables()
-  const prefsProvider = usePreferencesProvider()
   const pwaInstall = usePWAInstall()
   const {
     loading,
     authRequired,
+    authMode,
     needsSetup,
     authenticated,
+    username,
+    role,
     error: authError,
     rpId,
     origin,
     setup,
     login,
+    loginWithPassword,
     logout,
+    refreshAuthStatus,
   } = useAuth()
+  const prefsProvider = usePreferencesProvider({ localOnly: role === 'user' })
   const [showOnboarding, setShowOnboarding] = useState(false)
 
   // Re-fetch preferences after login (initial fetch may have gotten 401)
@@ -914,6 +1049,9 @@ export default function App() {
   }
 
   if (authRequired && !authenticated) {
+    if (authMode === 'accounts') {
+      return <Login mode="accounts" error={authError} onSubmit={loginWithPassword} />
+    }
     return <Login mode="login" error={authError} rpId={rpId} origin={origin} onSubmit={() => login()} />
   }
 
@@ -938,7 +1076,14 @@ export default function App() {
   return (
     <PreferencesContext.Provider value={prefsProvider}>
       <ApplicationStateProvider>
-        <AppInner onLogout={authRequired ? logout : undefined} pwaInstall={pwaInstall} />
+        <AppInner
+          authMode={authMode}
+          role={role}
+          username={username}
+          onLogout={authRequired ? logout : undefined}
+          onCheckAuthStatus={refreshAuthStatus}
+          pwaInstall={pwaInstall}
+        />
       </ApplicationStateProvider>
     </PreferencesContext.Provider>
   )

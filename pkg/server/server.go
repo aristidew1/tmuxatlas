@@ -57,6 +57,7 @@ type Options struct {
 	PushStore        *webpush.Store
 	PrefStore        *preferences.Store
 	AuthEnabled      bool
+	AccountsAuth     *auth.AccountsAuth
 	PasskeyManager   *auth.PasskeyManager
 	SessionMgr       *auth.SessionManager
 	PeerMgr          *peer.Manager
@@ -65,6 +66,7 @@ type Options struct {
 	PTYRelay         *peer.PTYRelay
 	Detector         *toolevents.Detector
 	LocalOnly        bool
+	routerObserver   func(chi.Routes)
 }
 
 func writeRuntimeError(w http.ResponseWriter, err error) {
@@ -81,7 +83,7 @@ func writeRuntimeError(w http.ResponseWriter, err error) {
 	case peer.ErrorPeerOffline, peer.ErrorPeerRevoked:
 		status = http.StatusServiceUnavailable
 	case peer.ErrorProtocolIncompatible, peer.ErrorCapabilityUnsupported,
-		peer.ErrorRequestConflict, peer.ErrorExecutionUnknown, peer.ErrorPromptChanged:
+		peer.ErrorRequestConflict, peer.ErrorExecutionUnknown, peer.ErrorPromptChanged, peer.ErrorAlreadyOwned, peer.ErrorNotOwner:
 		status = http.StatusConflict
 	case peer.ErrorUnsupported:
 		status = http.StatusNotImplemented
@@ -145,6 +147,19 @@ func handleRemoteSession(w http.ResponseWriter, r *http.Request, opts *Options, 
 		return
 	}
 	defer browserWS.Close()
+	if identity, ok := auth.AccountFromContext(r.Context()); ok {
+		stop := make(chan struct{})
+		defer close(stop)
+		go func() {
+			select {
+			case <-identity.Done:
+				_ = browserWS.Close()
+			case <-r.Context().Done():
+				_ = browserWS.Close()
+			case <-stop:
+			}
+		}()
+	}
 
 	// Generate stream ID and register pending relay
 	owner, err := opts.PTYRelay.RegisterPending(peerConn, target, browserWS)
@@ -175,6 +190,9 @@ func handleRemoteSession(w http.ResponseWriter, r *http.Request, opts *Options, 
 
 func Run(ctx context.Context, opts *Options) error {
 	logger := logrus.WithField("component", "server")
+	if opts.AccountsAuth != nil && (!opts.AuthEnabled || opts.SessionMgr == nil || opts.AccountsAuth.Sessions != opts.SessionMgr) {
+		return errors.New("configuration de l'authentification comptes incohérente")
+	}
 
 	coordinator := opts.StateCoordinator
 	if coordinator == nil {
@@ -328,12 +346,28 @@ func Run(ctx context.Context, opts *Options) error {
 	publicRouter.Use(chimiddleware.RequestID)
 	publicRouter.Use(hostValidation)
 	publicRouter.Use(httpguard.GlobalBodyLimitMiddleware(httpguard.GlobalBodyLimit))
+	accountPolicy := newAccountPolicy(opts)
+	if actionRouter != nil {
+		accountPolicy.router = actionRouter
+	}
+	if opts.AccountsAuth != nil {
+		go accountPolicy.watchOwnership(ctx)
+	}
 
 	// API routes
 	publicRouter.Route("/api", func(r chi.Router) {
 		// Public auth endpoints (no middleware)
-		r.Get("/auth/status", auth.StatusHandler(opts.AuthEnabled, opts.PasskeyManager))
-		if opts.AuthEnabled {
+		if opts.AccountsAuth != nil {
+			r.Get("/auth/status", opts.AccountsAuth.Status)
+			r.With(admissionMiddleware(ingressPolicy, ingress.CategoryWebAuthn), originMiddleware,
+				httpguard.BodyReadDeadline(15*time.Second), httpguard.JSONBody(httpguard.WebAuthnLimit)).
+				Post("/auth/login", opts.AccountsAuth.Login)
+			r.With(opts.AccountsAuth.Middleware, originMiddleware, auth.CSRFMiddleware(opts.SessionMgr)).
+				Post("/auth/logout", opts.AccountsAuth.Logout)
+		} else {
+			r.Get("/auth/status", auth.StatusHandler(opts.AuthEnabled, opts.PasskeyManager))
+		}
+		if opts.AuthEnabled && opts.AccountsAuth == nil {
 			preSessionJSON := []func(http.Handler) http.Handler{
 				admissionMiddleware(ingressPolicy, ingress.CategoryWebAuthn),
 				originMiddleware,
@@ -364,7 +398,40 @@ func Run(ctx context.Context, opts *Options) error {
 		// Protected API routes
 		r.Group(func(r chi.Router) {
 			mutations := r
-			if opts.AuthEnabled {
+			if opts.AccountsAuth != nil {
+				r.Use(opts.AccountsAuth.Middleware)
+				r.Use(accountPolicy.Middleware)
+				mutations = r.With(originMiddleware, auth.CSRFMiddleware(opts.SessionMgr))
+				mutations.With(httpguard.BodyReadDeadline(10*time.Second), httpguard.JSONBody(httpguard.SmallJSONLimit)).
+					Post("/auth/change-password", opts.AccountsAuth.ChangePassword)
+				r.With(accountAdminOnly).Get("/admin/users", func(w http.ResponseWriter, r *http.Request) {
+					handleAdminUsers(w, r, opts)
+				})
+				mutations.With(accountAdminOnly, httpguard.BodyReadDeadline(10*time.Second), httpguard.JSONBody(httpguard.SmallJSONLimit)).Post("/admin/users", func(w http.ResponseWriter, r *http.Request) {
+					handleAdminUsers(w, r, opts)
+				})
+				mutations.With(accountAdminOnly, httpguard.BodyReadDeadline(10*time.Second), httpguard.JSONBody(httpguard.SmallJSONLimit)).Patch("/admin/users/{id}", func(w http.ResponseWriter, r *http.Request) {
+					handleAdminUserUpdate(w, r, opts)
+				})
+				mutations.With(accountAdminOnly).Delete("/admin/users/{id}", func(w http.ResponseWriter, r *http.Request) {
+					handleAdminUserDelete(w, r, opts, actionRouter)
+				})
+				r.With(accountAdminOnly).Get("/admin/sessions", func(w http.ResponseWriter, r *http.Request) {
+					snapshot, err := coordinator.Snapshot(r.Context())
+					if err != nil {
+						http.Error(w, "état indisponible", http.StatusServiceUnavailable)
+						return
+					}
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(snapshot.State.SessionViews())
+				})
+				for _, operation := range []string{"claim", "release"} {
+					operation := operation
+					mutations.With(httpguard.BodyReadDeadline(10*time.Second), httpguard.JSONBody(httpguard.SmallJSONLimit)).Post("/session/"+operation, func(w http.ResponseWriter, r *http.Request) {
+						handleAccountOwnership(w, r, opts, actionRouter, accountPolicy, operation)
+					})
+				}
+			} else if opts.AuthEnabled {
 				r.Use(auth.Middleware(opts.SessionMgr, opts.SecureCookies))
 				r.Get("/auth/passkeys", opts.PasskeyManager.ListHandler())
 				mutations = r.With(originMiddleware, auth.CSRFMiddleware(opts.SessionMgr))
@@ -376,6 +443,11 @@ func Run(ctx context.Context, opts *Options) error {
 			}
 
 			// Agent status — check which agents are installed/configured
+			if opts.AccountsAuth != nil {
+				r.Get("/peers", func(w http.ResponseWriter, r *http.Request) {
+					http.NotFound(w, r)
+				})
+			}
 			r.Get("/agent-status", func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				if opts.Role == "hub" {
@@ -395,6 +467,10 @@ func Run(ctx context.Context, opts *Options) error {
 					return
 				}
 				w.Header().Set("Content-Type", "application/json")
+				if identity, ok := auth.AccountFromContext(r.Context()); ok && identity.User.Role == "user" {
+					json.NewEncoder(w).Encode(accountPolicy.verifiedProjection(snapshot.State).AccountSessionViews(identity.User.ID))
+					return
+				}
 				json.NewEncoder(w).Encode(snapshot.State.SessionViews())
 			})
 
@@ -405,6 +481,10 @@ func Run(ctx context.Context, opts *Options) error {
 					return
 				}
 				w.Header().Set("Content-Type", "application/json")
+				if identity, ok := auth.AccountFromContext(r.Context()); ok && identity.User.Role == "user" {
+					json.NewEncoder(w).Encode(accountPolicy.verifiedProjection(snapshot.State).AccountHostViews(identity.User.ID))
+					return
+				}
 				json.NewEncoder(w).Encode(snapshot.State.HostViews())
 			})
 
@@ -448,7 +528,11 @@ func Run(ctx context.Context, opts *Options) error {
 					http.Error(w, err.Error(), http.StatusServiceUnavailable)
 					return
 				}
-				events := snapshot.State.ToolEventViews()
+				projection := snapshot.State
+				if identity, ok := auth.AccountFromContext(r.Context()); ok && identity.User.Role == "user" {
+					projection = accountPolicy.verifiedProjection(projection).OwnedBy(identity.User.ID)
+				}
+				events := projection.ToolEventViews()
 				if session != "" {
 					filtered := events[:0]
 					for _, event := range events {
@@ -477,6 +561,7 @@ func Run(ctx context.Context, opts *Options) error {
 			mutations.With(httpguard.BodyReadDeadline(10*time.Second), httpguard.JSONBody(httpguard.SmallJSONLimit)).Delete("/tool-event", func(w http.ResponseWriter, r *http.Request) {
 				var req struct {
 					Host    string `json:"host"`
+					HostID  string `json:"host_id"`
 					Session string `json:"session"`
 					Window  int    `json:"window"`
 					Pane    string `json:"pane"`
@@ -484,6 +569,13 @@ func Run(ctx context.Context, opts *Options) error {
 				if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Session == "" {
 					http.Error(w, "session is required", http.StatusBadRequest)
 					return
+				}
+				if req.Host != "" && req.HostID != "" && req.Host != req.HostID {
+					http.Error(w, "cibles contradictoires", http.StatusBadRequest)
+					return
+				}
+				if req.Host == "" {
+					req.Host = req.HostID
 				}
 				if opts.Tracker != nil {
 					opts.Tracker.Clear(req.Host, req.Session, req.Window, req.Pane)
@@ -616,7 +708,11 @@ func Run(ctx context.Context, opts *Options) error {
 					http.Error(w, err.Error(), http.StatusServiceUnavailable)
 					return
 				}
-				snapshots := snapshot.State.ActivityViews()
+				projection := snapshot.State
+				if identity, ok := auth.AccountFromContext(r.Context()); ok && identity.User.Role == "user" {
+					projection = accountPolicy.verifiedProjection(projection).OwnedBy(identity.User.ID)
+				}
+				snapshots := projection.ActivityViews()
 				w.Header().Set("Content-Type", "application/json")
 				if session != "" {
 					for _, activitySnapshot := range snapshots {
@@ -687,6 +783,9 @@ func Run(ctx context.Context, opts *Options) error {
 				} else {
 					prefs = preferences.Default()
 				}
+				if identity, ok := auth.AccountFromContext(r.Context()); ok && identity.User.Role == "user" {
+					prefs = preferences.Default()
+				}
 				w.Header().Set("Content-Type", "application/json")
 				json.NewEncoder(w).Encode(prefs)
 			})
@@ -731,11 +830,19 @@ func Run(ctx context.Context, opts *Options) error {
 				})
 			})
 		})
+		if opts.AccountsAuth != nil {
+			r.With(opts.AccountsAuth.Middleware, accountPolicy.Middleware).Handle("/*", http.NotFoundHandler())
+		}
 	})
 
 	// WebSocket routes (protected by auth if enabled)
 	hub := ws.NewHub(opts.StateMgr, opts.Tracker)
 	hub.SetCoordinator(coordinator)
+	if opts.AccountsAuth != nil {
+		hub.SetAccountProjection(func(projection state.Projection, accountID string) state.AccountProjection {
+			return accountPolicy.verifiedProjection(projection).ForAccount(accountID)
+		})
+	}
 	if opts.ActivityTracker != nil {
 		var peerActivity ws.ActivitySource
 		localHostID := ""
@@ -758,11 +865,18 @@ func Run(ctx context.Context, opts *Options) error {
 
 	if opts.AuthEnabled {
 		authMw := auth.Middleware(opts.SessionMgr, opts.SecureCookies)
-		publicRouter.With(authMw, originMiddleware, admissionMiddleware(ingressPolicy, ingress.CategoryWSTerminal)).Get("/ws/events", hub.HandleEvents)
-		if browserMic != nil {
-			publicRouter.With(authMw, originMiddleware, admissionMiddleware(ingressPolicy, ingress.CategoryWSTerminal)).Get("/ws/mic", browserMic.HandleStream)
+		if opts.AccountsAuth != nil {
+			authMw = opts.AccountsAuth.Middleware
 		}
-		publicRouter.With(authMw, originMiddleware, admissionMiddleware(ingressPolicy, ingress.CategoryWSTerminal)).Get("/ws/session", func(w http.ResponseWriter, req *http.Request) {
+		accountGuard := func(next http.Handler) http.Handler { return next }
+		if opts.AccountsAuth != nil {
+			accountGuard = accountPolicy.Middleware
+		}
+		publicRouter.With(authMw, accountGuard, originMiddleware, admissionMiddleware(ingressPolicy, ingress.CategoryWSTerminal)).Get("/ws/events", hub.HandleEvents)
+		if browserMic != nil {
+			publicRouter.With(authMw, accountGuard, originMiddleware, admissionMiddleware(ingressPolicy, ingress.CategoryWSTerminal)).Get("/ws/mic", browserMic.HandleStream)
+		}
+		publicRouter.With(authMw, accountGuard, originMiddleware, admissionMiddleware(ingressPolicy, ingress.CategoryWSTerminal)).Get("/ws/session", func(w http.ResponseWriter, req *http.Request) {
 			hostID := req.URL.Query().Get("host")
 			if opts.PeerMgr == nil || hostID == "" || !opts.PeerMgr.HasHost(hostID) {
 				http.Error(w, "explicit known host is required", http.StatusBadRequest)
@@ -820,6 +934,9 @@ func Run(ctx context.Context, opts *Options) error {
 		return fmt.Errorf("frontend fs: %w", err)
 	}
 	publicRouter.Get("/*", frontendHandler(sub).ServeHTTP)
+	if opts.routerObserver != nil {
+		opts.routerObserver(publicRouter)
+	}
 
 	publicServer := &http.Server{
 		Handler:           publicRouter,

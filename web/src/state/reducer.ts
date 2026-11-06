@@ -140,10 +140,17 @@ function applyOperation(projection: Projection, operation: StateOperation) {
     case 'remove-host':
       delete projection.hosts[requireKey(operation.key)]
       break
-    case 'upsert-session':
-      requireKey(operation.session.key)
-      projection.sessions[operation.session.key] = { ...operation.session }
+    case 'upsert-session': {
+      const session = operation.session
+      const derivedKey =
+        session.key ||
+        ('host' in session && session.host && session.name
+          ? `host/${encodeURIComponent(session.host)}/session/${encodeURIComponent(session.name)}`
+          : '')
+      requireKey(derivedKey)
+      projection.sessions[derivedKey] = { ...session }
       break
+    }
     case 'remove-session':
       delete projection.sessions[requireKey(operation.key)]
       break

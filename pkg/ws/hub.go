@@ -15,6 +15,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/LosFurina/tmuxatlas/pkg/activity"
+	"github.com/LosFurina/tmuxatlas/pkg/auth"
 	"github.com/LosFurina/tmuxatlas/pkg/common"
 	"github.com/LosFurina/tmuxatlas/pkg/state"
 	"github.com/LosFurina/tmuxatlas/pkg/toolevents"
@@ -56,16 +57,23 @@ type ActivitySource interface {
 
 // Hub manages WebSocket connections for state events and tool events
 type Hub struct {
-	mu              sync.RWMutex
-	clients         map[*client]bool
-	stateMgr        *state.Manager
-	tracker         *toolevents.Tracker
-	activityTracker *activity.Tracker
-	peerActivity    ActivitySource // optional, for multi-host
-	localHostID     string         // optional, set in multi-host mode
-	localOnly       bool
-	coordinator     *state.Coordinator
-	stateQueueSize  int
+	mu                sync.RWMutex
+	clients           map[*client]bool
+	stateMgr          *state.Manager
+	tracker           *toolevents.Tracker
+	activityTracker   *activity.Tracker
+	peerActivity      ActivitySource // optional, for multi-host
+	localHostID       string         // optional, set in multi-host mode
+	localOnly         bool
+	coordinator       *state.Coordinator
+	stateQueueSize    int
+	accountProjection func(state.Projection, string) state.AccountProjection
+}
+
+// SetAccountProjection permits the server to revalidate ownership before
+// constructing each account-specific snapshot.
+func (h *Hub) SetAccountProjection(project func(state.Projection, string) state.AccountProjection) {
+	h.accountProjection = project
 }
 
 func (h *Hub) SetCoordinator(coordinator *state.Coordinator) {
@@ -233,6 +241,8 @@ func (h *Hub) HandleEvents(w http.ResponseWriter, r *http.Request) {
 		logrus.WithError(err).Warn("ws upgrade failed")
 		return
 	}
+	stopRevocation := closeOnAccountRevocation(conn, r)
+	defer stopRevocation()
 	if h.coordinator != nil {
 		h.handleCanonicalEvents(conn, r)
 		return
@@ -325,7 +335,23 @@ func (h *Hub) handleCanonicalEvents(conn *websocket.Conn, r *http.Request) {
 	conn.SetPongHandler(func(string) error {
 		return conn.SetReadDeadline(time.Now().Add(45 * time.Second))
 	})
-	if err := writeCanonicalEnvelope(c, subscription.Snapshot); err != nil {
+	identity, account := auth.AccountFromContext(r.Context())
+	filtered := account && identity.User.Role == "user"
+	writeSnapshot := func(snapshot state.SnapshotEnvelope) error {
+		if !filtered {
+			return writeCanonicalEnvelope(c, snapshot)
+		}
+		projection := snapshot.State.ForAccount(identity.User.ID)
+		if h.accountProjection != nil {
+			projection = h.accountProjection(snapshot.State, identity.User.ID)
+		}
+		return writeCanonicalEnvelope(c, map[string]any{
+			"type": snapshot.Type, "schema_version": snapshot.SchemaVersion,
+			"instance_id": snapshot.InstanceID, "revision": snapshot.Revision,
+			"state": projection,
+		})
+	}
+	if err := writeSnapshot(subscription.Snapshot); err != nil {
 		return
 	}
 
@@ -368,7 +394,12 @@ func (h *Hub) handleCanonicalEvents(conn *websocket.Conn, r *http.Request) {
 				return
 			}
 			if message.Delta != nil {
-				if err := writeCanonicalEnvelope(c, message.Delta); err != nil {
+				if filtered {
+					snapshot, err := h.coordinator.Snapshot(r.Context())
+					if err != nil || writeSnapshot(snapshot) != nil {
+						return
+					}
+				} else if err := writeCanonicalEnvelope(c, message.Delta); err != nil {
 					return
 				}
 			}

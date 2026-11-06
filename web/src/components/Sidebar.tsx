@@ -5,7 +5,8 @@ import { parseSessionKey, type Session } from '../hooks/useSessions'
 import type { WorkspaceSession, WorkspaceStatus, WorkspaceViewModel } from '../workspace/model'
 import { filterWorkspaceSessions, isAttentionStatus, workspaceStatusLabel } from '../workspace/model'
 import { Button, Dialog, StatusIcon } from './ui'
-import { Search, Pin, ChevronDown, ChevronRight, Pencil, Unplug, Trash2 } from 'lucide-react'
+import { Search, Pin, ChevronDown, ChevronRight, Pencil, Unplug, Trash2, User } from 'lucide-react'
+import { resolveOwnerName } from '../lib/accountsApi'
 import { useHostLabel } from '../lib/hostLabel'
 import { focusableElements, makeOutsideInert } from './ui/overlayAccessibility'
 
@@ -279,6 +280,7 @@ export function Sidebar({
   const renderSession = (session: WorkspaceSession, showHost = false) => {
     const selected = selectedSession === session.key
     const isRenaming = renaming?.key === session.key
+    const ownerName = session.ownerName !== undefined ? session.ownerName : resolveOwnerName(session.owner ?? session.source.owner)
     return (
       <li key={session.key}>
         <div
@@ -333,9 +335,20 @@ export function Sidebar({
                   className="min-w-0 flex-1 rounded border border-primary bg-input px-1 py-0.5 font-mono text-sm text-foreground outline-none"
                 />
               ) : (
-                <span className={cn('min-w-0 flex-1 font-medium', 'truncate text-sm leading-4')} title={session.name}>
-                  {collapsed && !mobileDrawerActive ? session.name.charAt(0).toUpperCase() : session.name}
-                </span>
+                <>
+                  <span className={cn('min-w-0 flex-1 font-medium', 'truncate text-sm leading-4')} title={session.name}>
+                    {collapsed && !mobileDrawerActive ? session.name.charAt(0).toUpperCase() : session.name}
+                  </span>
+                  {(!collapsed || mobileDrawerActive) && ownerName && (
+                    <span
+                      data-testid="sidebar-owner-badge"
+                      className="inline-flex shrink-0 items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-2xs text-muted-foreground"
+                    >
+                      <User size={11} aria-hidden="true" />
+                      <span className="max-w-20 truncate">{ownerName}</span>
+                    </span>
+                  )}
+                </>
               )}
             </div>
             {(!collapsed || mobileDrawerActive) && (

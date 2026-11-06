@@ -1,28 +1,37 @@
 import { useState, type FormEvent } from 'react'
-import { KeyRound } from 'lucide-react'
+import { KeyRound, LogIn } from 'lucide-react'
 import { AtlasMark, TopoBackground } from './Brand'
 import { Button } from './ui'
 
 interface LoginProps {
-  mode: 'setup' | 'login'
+  mode: 'setup' | 'login' | 'accounts'
   error: string | null
   rpId?: string | null
   origin?: string | null
-  onSubmit: (setupToken: string, label?: string) => Promise<boolean>
+  onSubmit: (firstArg: string, secondArg?: string) => Promise<boolean>
 }
 
 export function Login({ mode, error, rpId, origin, onSubmit }: LoginProps) {
   const [setupToken, setSetupToken] = useState('')
   const [label, setLabel] = useState('')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const isSetup = mode === 'setup'
+  const isAccounts = mode === 'accounts'
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
-    if (submitting || (isSetup && !setupToken.trim())) return
+    if (submitting) return
+    if (isSetup && !setupToken.trim()) return
+    if (isAccounts && (!username.trim() || !password)) return
     setSubmitting(true)
     try {
-      await onSubmit(setupToken, label)
+      if (isAccounts) {
+        await onSubmit(username.trim(), password)
+      } else {
+        await onSubmit(setupToken, label)
+      }
     } finally {
       setSubmitting(false)
     }
@@ -40,9 +49,49 @@ export function Login({ mode, error, rpId, origin, onSubmit }: LoginProps) {
         <section className="atlas-surface rounded-xl p-5 sm:p-6">
           <h2 className="text-sm font-medium">{isSetup ? 'Créer la passkey administrateur' : 'Se connecter'}</h2>
           <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-            Utilisez une passkey pour accéder à Atlas.
+            {isAccounts
+              ? 'Entrez vos identifiants pour accéder à vos sessions Atlas.'
+              : 'Utilisez une passkey pour accéder à Atlas.'}
           </p>
           <form onSubmit={handleSubmit} className="mt-5 space-y-3">
+            {isAccounts && (
+              <>
+                <div className="space-y-1.5">
+                  <label htmlFor="login-username" className="block text-xs text-muted-foreground">
+                    Nom d’utilisateur
+                  </label>
+                  <input
+                    id="login-username"
+                    name="username"
+                    type="text"
+                    value={username}
+                    onChange={event => setUsername(event.target.value)}
+                    placeholder="Nom d’utilisateur"
+                    autoComplete="username"
+                    autoFocus
+                    spellCheck={false}
+                    required
+                    className="ui-focus-ring min-h-11 w-full rounded bg-input px-3 text-foreground placeholder:text-muted-foreground"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label htmlFor="login-password" className="block text-xs text-muted-foreground">
+                    Mot de passe
+                  </label>
+                  <input
+                    id="login-password"
+                    name="password"
+                    type="password"
+                    value={password}
+                    onChange={event => setPassword(event.target.value)}
+                    placeholder="Mot de passe"
+                    autoComplete="current-password"
+                    required
+                    className="ui-focus-ring min-h-11 w-full rounded bg-input px-3 text-foreground placeholder:text-muted-foreground"
+                  />
+                </div>
+              </>
+            )}
             {isSetup && (
               <>
                 <input
@@ -76,22 +125,32 @@ export function Login({ mode, error, rpId, origin, onSubmit }: LoginProps) {
               type="submit"
               variant="primary"
               className="w-full"
-              disabled={isSetup && !setupToken.trim()}
+              disabled={(isSetup && !setupToken.trim()) || (isAccounts && (!username.trim() || !password))}
               loading={submitting}
-              loadingLabel={isSetup ? 'Création de la passkey…' : 'En attente de la passkey…'}
-              leadingIcon={<KeyRound size={16} aria-hidden="true" />}
+              loadingLabel={
+                isAccounts
+                  ? 'Connexion en cours…'
+                  : isSetup
+                    ? 'Création de la passkey…'
+                    : 'En attente de la passkey…'
+              }
+              leadingIcon={isAccounts ? <LogIn size={16} aria-hidden="true" /> : <KeyRound size={16} aria-hidden="true" />}
             >
-              {isSetup ? 'Créer la passkey' : 'Se connecter avec une passkey'}
+              {isAccounts ? 'Se connecter' : isSetup ? 'Créer la passkey' : 'Se connecter avec une passkey'}
             </Button>
           </form>
-          <details className="mt-5 text-xs text-muted-foreground">
-            <summary className="ui-focus-ring cursor-pointer py-2">Comment utiliser une passkey ?</summary>
-            <p className="pt-2 leading-relaxed">
-              Utilisez cet appareil, un gestionnaire de mots de passe ou un autre appareil en scannant son code QR.
-            </p>
-          </details>
-          {(rpId || origin) && (
-            <p className="mt-4 break-all text-2xs text-muted-foreground">Domaine de la passkey : {rpId || origin}</p>
+          {!isAccounts && (
+            <>
+              <details className="mt-5 text-xs text-muted-foreground">
+                <summary className="ui-focus-ring cursor-pointer py-2">Comment utiliser une passkey ?</summary>
+                <p className="pt-2 leading-relaxed">
+                  Utilisez cet appareil, un gestionnaire de mots de passe ou un autre appareil en scannant son code QR.
+                </p>
+              </details>
+              {(rpId || origin) && (
+                <p className="mt-4 break-all text-2xs text-muted-foreground">Domaine de la passkey : {rpId || origin}</p>
+              )}
+            </>
           )}
         </section>
       </div>

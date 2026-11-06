@@ -35,11 +35,33 @@ func NewTmuxRuntimeExecutor(client *tmux.Client) RuntimeExecutor {
 
 func (router *ActionRouter) Execute(ctx context.Context, operation string, target SessionTarget, payload json.RawMessage) (ActionResponse, error) {
 	requestID := newRuntimeRequestID()
+	if operation == "new" {
+		if err := tmux.ValidateSessionName(target.Session); err != nil {
+			return ActionResponse{}, RuntimeError{RequestID: requestID, Code: ErrorInvalidTarget, Message: err.Error()}
+		}
+	}
 	if err := target.Validate(); err != nil {
-		return ActionResponse{}, RuntimeError{RequestID: requestID, Code: ErrorInvalidTarget}
+		return ActionResponse{}, RuntimeError{RequestID: requestID, Code: ErrorInvalidTarget, Message: err.Error()}
 	}
 	if router.manager == nil {
 		return ActionResponse{}, RuntimeError{RequestID: requestID, Code: ErrorPeerOffline}
+	}
+	if target.Session == "tmuxatlas-ctrl" {
+		return ActionResponse{}, RuntimeError{RequestID: requestID, Code: ErrorNotFound}
+	}
+	if operation == "rename" {
+		var params struct {
+			NewName string `json:"new_name"`
+		}
+		if json.Unmarshal(payload, &params) != nil {
+			return ActionResponse{}, RuntimeError{RequestID: requestID, Code: ErrorInvalidTarget, Message: "new_name est requis"}
+		}
+		if err := tmux.ValidateSessionName(params.NewName); err != nil {
+			return ActionResponse{}, RuntimeError{RequestID: requestID, Code: ErrorInvalidTarget, Message: err.Error()}
+		}
+		if router.manager.HasSession(target.HostID, params.NewName) {
+			return ActionResponse{}, RuntimeError{RequestID: requestID, Code: ErrorInvalidTarget, Message: "une session porte déjà ce nom"}
+		}
 	}
 	if operation != "new" && operation != "directories" && !router.manager.HasSession(target.HostID, target.Session) {
 		return ActionResponse{}, RuntimeError{RequestID: requestID, Code: ErrorNotFound}
@@ -66,6 +88,12 @@ func (router *ActionRouter) Execute(ctx context.Context, operation string, targe
 	}
 	if !connection.Supports(CapabilitySessionActions) || !connection.Supports(CapabilityRequestResults) {
 		return ActionResponse{}, RuntimeError{RequestID: requestID, Generation: connection.Generation, Code: ErrorCapabilityUnsupported}
+	}
+	if requiresOwnership(operation, payload) && !connection.Supports(CapabilitySessionOwnership) {
+		return ActionResponse{}, RuntimeError{RequestID: requestID, Code: ErrorUnsupported}
+	}
+	if requiresOwnerName(operation, payload) && !connection.Supports(CapabilitySessionOwnerName) {
+		return ActionResponse{}, RuntimeError{RequestID: requestID, Code: ErrorUnsupported}
 	}
 	if requiresSessionExtras(operation, payload) && !connection.Supports(CapabilitySessionExtras) {
 		return ActionResponse{}, RuntimeError{RequestID: requestID, Generation: connection.Generation, Code: ErrorUnsupported,

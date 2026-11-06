@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
+import { User } from 'lucide-react'
 import type { Session } from '../hooks/useSessions'
 import type { ToolEvent } from '../hooks/useToolEvents'
 import type { ActivitySnapshot } from '../hooks/useActivity'
 import { usePreferences } from '../hooks/usePreferences'
 import { useSessionPreview } from '../hooks/useSessionPreview'
+import { resolveOwnerName } from '../lib/accountsApi'
 import { deriveSessionStatus, workspaceStatusLabel } from '../workspace/model'
+import { Button } from './ui/Button'
 import { StatusPill } from './ui/StatusPill'
 
 function formatActivity(value: string, format: string) {
@@ -23,13 +26,17 @@ export function SessionCard({
   events,
   activity,
   sparklines,
+  ownerName,
   onSelect,
+  onRelease,
 }: {
   session: Session
   events: ToolEvent[]
   activity?: ActivitySnapshot
   sparklines: boolean
+  ownerName?: string | null
   onSelect: () => void
+  onRelease?: () => void
 }) {
   const ref = useRef<HTMLButtonElement>(null)
   const [visible, setVisible] = useState(false)
@@ -62,6 +69,7 @@ export function SessionCard({
       ),
     ]),
   ]
+  const resolvedOwner = ownerName !== undefined ? ownerName : resolveOwnerName(session.owner)
   const metadata = [
     agents.join(', '),
     `${session.windows.length} fenêtre${session.windows.length === 1 ? '' : 's'}`,
@@ -76,6 +84,73 @@ export function SessionCard({
   const values = activity?.sparkline ?? []
   const max = Math.max(...values, 1)
 
+  const cardBody = (
+    <div key={flash} className={`min-w-0 w-full ${flash ? 'atlas-flash' : ''}`}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-sm font-medium">{session.name}</span>
+          {resolvedOwner && (
+            <span
+              data-testid="session-owner-badge"
+              className="inline-flex shrink-0 items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-2xs text-muted-foreground"
+            >
+              <User size={12} aria-hidden="true" />
+              <span>{resolvedOwner}</span>
+            </span>
+          )}
+        </div>
+        <StatusPill status={status}>{workspaceStatusLabel(status)}</StatusPill>
+      </div>
+      <div className="mt-2 truncate text-xs text-muted-foreground">{metadata.join(' · ')}</div>
+      <div
+        className="mt-3 flex h-[4lh] items-end overflow-hidden font-mono text-2xs text-muted-foreground"
+        style={{ maskImage: 'linear-gradient(to bottom, transparent, black 30%)' }}
+      >
+        {hasLines && <pre className="overflow-hidden whitespace-pre">{lines.join('\n')}</pre>}
+      </div>
+      {sparklines && values.length >= 4 && (
+        <svg
+          aria-label="Activité récente"
+          role="img"
+          viewBox={`0 0 ${values.length - 1} 20`}
+          preserveAspectRatio="none"
+          className="mt-3 h-5 w-full"
+        >
+          <polyline
+            points={values.map((v, i) => `${i},${19 - (v / max) * 18}`).join(' ')}
+            fill="none"
+            stroke="var(--muted-foreground)"
+            strokeWidth="1"
+            vectorEffect="non-scaling-stroke"
+          />
+        </svg>
+      )}
+    </div>
+  )
+
+  if (onRelease) {
+    return (
+      <div
+        data-tone={status === 'error' || status === 'waiting' ? status : undefined}
+        className="atlas-surface flex h-full w-full flex-col justify-between rounded-lg p-4 transition-colors hover:bg-secondary/50"
+      >
+        <button
+          ref={ref}
+          type="button"
+          onClick={onSelect}
+          className="ui-focus-ring flex w-full items-start text-left"
+        >
+          {cardBody}
+        </button>
+        <div className="mt-3 flex justify-end border-t border-border/60 pt-2">
+          <Button type="button" variant="secondary" size="sm" onClick={onRelease}>
+            Libérer
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <button
       ref={ref}
@@ -84,36 +159,7 @@ export function SessionCard({
       data-tone={status === 'error' || status === 'waiting' ? status : undefined}
       className="atlas-surface ui-focus-ring flex h-full w-full items-start rounded-lg p-4 text-left transition-colors hover:bg-secondary/50"
     >
-      <div key={flash} className={`min-w-0 w-full ${flash ? 'atlas-flash' : ''}`}>
-        <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-sm font-medium">{session.name}</span>
-          <StatusPill status={status}>{workspaceStatusLabel(status)}</StatusPill>
-        </div>
-        <div className="mt-2 truncate text-xs text-muted-foreground">{metadata.join(' · ')}</div>
-        <div
-          className="mt-3 flex h-[4lh] items-end overflow-hidden font-mono text-2xs text-muted-foreground"
-          style={{ maskImage: 'linear-gradient(to bottom, transparent, black 30%)' }}
-        >
-          {hasLines && <pre className="overflow-hidden whitespace-pre">{lines.join('\n')}</pre>}
-        </div>
-        {sparklines && values.length >= 4 && (
-          <svg
-            aria-label="Activité récente"
-            role="img"
-            viewBox={`0 0 ${values.length - 1} 20`}
-            preserveAspectRatio="none"
-            className="mt-3 h-5 w-full"
-          >
-            <polyline
-              points={values.map((v, i) => `${i},${19 - (v / max) * 18}`).join(' ')}
-              fill="none"
-              stroke="var(--muted-foreground)"
-              strokeWidth="1"
-              vectorEffect="non-scaling-stroke"
-            />
-          </svg>
-        )}
-      </div>
+      {cardBody}
     </button>
   )
 }

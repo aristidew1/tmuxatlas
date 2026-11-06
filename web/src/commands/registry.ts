@@ -9,6 +9,7 @@ export type CommandId =
   | 'navigation.settings'
   | 'navigation.monitoring'
   | 'navigation.wall'
+  | 'navigation.admin'
   | 'session.next'
   | 'session.previous'
   | `session.select.${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}`
@@ -25,6 +26,8 @@ export interface CommandEnvironment {
   canReconnect: boolean
   canSignOut: boolean
   hasAttention: boolean
+  canMonitor?: boolean
+  isAdmin?: boolean
 }
 
 export interface CommandHandlerContext {
@@ -90,7 +93,7 @@ const definitions: readonly CommandDefinition[] = [
     category: 'Navigation',
     scope: 'workspace',
     focusAfterRun: 'none',
-    enablement: always,
+    enablement: environment => environment.canMonitor !== false,
   },
   {
     id: 'navigation.wall',
@@ -99,6 +102,14 @@ const definitions: readonly CommandDefinition[] = [
     scope: 'workspace',
     focusAfterRun: 'none',
     enablement: always,
+  },
+  {
+    id: 'navigation.admin',
+    label: 'Administration',
+    category: 'Navigation',
+    scope: 'workspace',
+    focusAfterRun: 'none',
+    enablement: environment => Boolean(environment.isAdmin),
   },
   {
     id: 'session.next',

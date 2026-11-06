@@ -23,6 +23,7 @@ import {
 } from '../lib/terminalInput'
 import { ensureTerminalFont } from '../fonts'
 import '@xterm/xterm/css/xterm.css'
+import { micTabId } from '../lib/micTab'
 
 export type PtyConnectionState =
   | 'connecting'
@@ -487,7 +488,7 @@ export function useTerminal(
       const cols = term.cols || 80
       const rows = term.rows || 24
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const url = `${protocol}//${window.location.host}/ws/session?name=${encodeURIComponent(sessionName)}&cols=${cols}&rows=${rows}&host=${encodeURIComponent(hostId)}`
+      const url = `${protocol}//${window.location.host}/ws/session?name=${encodeURIComponent(sessionName)}&cols=${cols}&rows=${rows}&host=${encodeURIComponent(hostId)}&mic=${micTabId}`
       const socket = new WebSocket(url)
       socket.binaryType = 'arraybuffer'
       wsRef.current = socket

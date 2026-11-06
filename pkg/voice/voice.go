@@ -2,7 +2,11 @@
 // so that terminal programs on this host that capture from the default audio
 // device (for example Claude Code /voice through SoX) hear the browser user.
 //
-//	browser mic -> /ws/mic -> pacat -> null sink "atlas_mic" -> monitor source -> ALSA pulse plugin -> SoX
+//	browser tab mic -> /ws/mic -> pacat -> the tab's null sink -> monitor source -> ALSA pulse plugin -> SoX
+//
+// Each tab has its own null sink, so people dictating at the same time never hear
+// each other. Recorders start on the silent default source "atlas_mic" and are
+// moved to the microphone of the tab using their tmux session (see route.go).
 //
 // A null sink is used rather than a pipe source because PulseAudio clocks it: an
 // open recorder receives real-time silence when nobody is streaming, and audio
@@ -42,6 +46,9 @@ const (
 	frameTimeout = 15 * time.Second
 
 	commandTimeout = 5 * time.Second
+
+	// maxStreams bounds the PulseAudio modules that browsers can make this host load.
+	maxStreams = 16
 )
 
 // asoundrc routes ALSA clients such as SoX to PulseAudio.
@@ -74,7 +81,10 @@ type runner func(ctx context.Context, name string, args ...string) (string, erro
 func execRunner(ctx context.Context, name string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, commandTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
+	cmd := exec.CommandContext(ctx, name, args...)
+	// pactl translates the output that route.go parses.
+	cmd.Env = append(os.Environ(), "LC_ALL=C")
+	out, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(out)), err
 }
 
@@ -89,12 +99,12 @@ type pacatPlayback struct {
 	stdin io.WriteCloser
 }
 
-func startPacat() (playback, error) {
+func startPacat(sink string) (playback, error) {
 	cmd := exec.Command("pacat",
 		"--playback", "--raw",
 		"--format=s16le", fmt.Sprintf("--rate=%d", SampleRate), "--channels=1",
 		"--latency-msec=30",
-		"--device="+sinkName,
+		"--device="+sink,
 		"--stream-name=tmuxatlas-browser-mic",
 	)
 	stdin, err := cmd.StdinPipe()
@@ -117,33 +127,61 @@ func (p *pacatPlayback) Close() error {
 	return p.cmd.Wait()
 }
 
-// Mic owns the virtual microphone and the single active browser stream.
-type Mic struct {
-	run      runner
-	start    func() (playback, error)
-	asoundrc string
-	upgrader websocket.Upgrader
-
-	mu         sync.Mutex
-	status     Status
-	generation uint64
-	cancelCur  func()
+// stream is one browser tab's live microphone.
+type stream struct {
+	id     string
+	sink   string
+	order  uint64
+	cancel func()
 }
 
-// New creates a Mic for the current user. Call Setup before serving streams.
-func New() *Mic {
+// Mic owns the virtual microphones and routes recorders to them.
+type Mic struct {
+	run         runner
+	start       func(sink string) (playback, error)
+	asoundrc    string
+	upgrader    websocket.Upgrader
+	subscribe   func(ctx context.Context, onEvent func(line string)) error
+	paneSession func(ctx context.Context, pid int) string
+
+	mu       sync.Mutex
+	status   Status
+	streams  map[string]*stream
+	sessions map[string]string // tmux session -> id of the tab last using it
+	order    uint64
+
+	// sinkMu keeps Setup from removing a sink that is being created.
+	sinkMu sync.Mutex
+	sinks  map[string]string // sink name -> module index
+
+	routeMu sync.Mutex
+	routed  map[string]string // source output -> the source it was moved to
+}
+
+// New creates a Mic for the current user. Call Setup before serving streams, and
+// Run to route recorders. tmuxPath is the tmux binary used to identify sessions.
+func New(tmuxPath string) *Mic {
 	home, _ := os.UserHomeDir()
-	return &Mic{
-		run:      execRunner,
-		start:    startPacat,
-		asoundrc: filepath.Join(home, ".asoundrc"),
+	m := &Mic{
+		run:       execRunner,
+		start:     startPacat,
+		subscribe: pactlSubscribe,
+		asoundrc:  filepath.Join(home, ".asoundrc"),
 		upgrader: websocket.Upgrader{
 			CheckOrigin:     ws.CheckSameOrigin,
 			ReadBufferSize:  4 << 10,
 			WriteBufferSize: 1 << 10,
 		},
-		status: Status{Enabled: true},
+		status:   Status{Enabled: true},
+		streams:  make(map[string]*stream),
+		sessions: make(map[string]string),
+		sinks:    make(map[string]string),
+		routed:   make(map[string]string),
 	}
+	m.paneSession = func(ctx context.Context, pid int) string {
+		return tmuxSessionOfProcess(ctx, m.run, tmuxPath, pid)
+	}
+	return m
 }
 
 // Status returns the result of the latest Setup.
@@ -179,7 +217,7 @@ func (m *Mic) setup(ctx context.Context) error {
 	if err != nil {
 		return commandError("list PulseAudio modules", modules, err)
 	}
-	if !strings.Contains(modules, "sink_name="+sinkName) {
+	if !hasNamedSink(modules, sinkName) {
 		out, err := m.run(ctx, "pactl", "load-module", "module-null-sink",
 			"sink_name="+sinkName,
 			fmt.Sprintf("rate=%d", SampleRate), "channels=1", "format=s16le",
@@ -195,9 +233,17 @@ func (m *Mic) setup(ctx context.Context) error {
 			return commandError("disable PulseAudio idle suspend", out, err)
 		}
 	}
+	// It would start a recorder on the source it last used, which can be another
+	// tab's microphone, until route moves it.
+	if strings.Contains(modules, "module-stream-restore") {
+		if out, err := m.run(ctx, "pactl", "unload-module", "module-stream-restore"); err != nil {
+			return commandError("disable PulseAudio stream restore", out, err)
+		}
+	}
 	if out, err := m.run(ctx, "pactl", "set-default-source", sourceName); err != nil {
 		return commandError("select the virtual microphone", out, err)
 	}
+	m.removeOrphanSinks(ctx, modules)
 	return nil
 }
 
@@ -232,30 +278,16 @@ func commandError(action, output string, err error) error {
 	return fmt.Errorf("%s: %w", action, err)
 }
 
-// claim makes the caller the active stream. The newest stream wins so that two
-// tabs never mix their microphones; the previous one is disconnected.
-func (m *Mic) claim(cancel func()) (release func()) {
-	m.mu.Lock()
-	previous := m.cancelCur
-	m.generation++
-	generation := m.generation
-	m.cancelCur = cancel
-	m.mu.Unlock()
-	if previous != nil {
-		previous()
-	}
-	return func() {
-		m.mu.Lock()
-		defer m.mu.Unlock()
-		if m.generation == generation {
-			m.cancelCur = nil
-		}
-	}
-}
-
-// HandleStream receives PCM frames from one browser and plays them into the
-// virtual microphone. Audio is forwarded only and never stored.
+// HandleStream receives PCM frames from one browser tab and plays them into that
+// tab's virtual microphone. Audio is forwarded only and never stored.
 func (m *Mic) HandleStream(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		id = newStreamID()
+	} else if !validStreamID(id) {
+		http.Error(w, "invalid microphone id", http.StatusBadRequest)
+		return
+	}
 	if err := m.Setup(r.Context()); err != nil {
 		logrus.WithError(err).Warn("voice setup failed")
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
@@ -269,25 +301,38 @@ func (m *Mic) HandleStream(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 	conn.SetReadLimit(maxFrameBytes)
 
-	sink, err := m.start()
+	sink, removeSink, err := m.createSink(r.Context())
+	if err != nil {
+		logrus.WithError(err).Error("failed to create the tab's virtual microphone")
+		closeWith(conn, websocket.CloseInternalServerErr, "microphone setup failed")
+		return
+	}
+	defer removeSink()
+
+	player, err := m.start(sink)
 	if err != nil {
 		logrus.WithError(err).Error("failed to start mic playback")
 		closeWith(conn, websocket.CloseInternalServerErr, "microphone playback failed")
 		return
 	}
-	var closeSink sync.Once
-	stopSink := func() { closeSink.Do(func() { sink.Close() }) }
-	defer stopSink()
+	var closePlayer sync.Once
+	stopPlayer := func() { closePlayer.Do(func() { player.Close() }) }
+	defer stopPlayer()
 
 	var takenOver sync.Once
-	release := m.claim(func() {
+	release, err := m.register(id, sink, func() {
 		takenOver.Do(func() {
-			closeWith(conn, websocket.ClosePolicyViolation, "microphone taken over by another tab")
-			stopSink()
+			closeWith(conn, websocket.ClosePolicyViolation, "microphone restarted in this tab")
+			stopPlayer()
 			conn.Close()
 		})
 	})
+	if err != nil {
+		closeWith(conn, websocket.CloseTryAgainLater, err.Error())
+		return
+	}
 	defer release()
+	go m.route(context.Background())
 
 	logrus.Info("browser microphone connected")
 	defer logrus.Info("browser microphone disconnected")
@@ -301,7 +346,7 @@ func (m *Mic) HandleStream(w http.ResponseWriter, r *http.Request) {
 			closeWith(conn, websocket.CloseUnsupportedData, "expected 16-bit PCM frames")
 			return
 		}
-		if _, err := sink.Write(frame); err != nil {
+		if _, err := player.Write(frame); err != nil {
 			logrus.WithError(err).Warn("mic playback stopped")
 			closeWith(conn, websocket.CloseInternalServerErr, "microphone playback stopped")
 			return

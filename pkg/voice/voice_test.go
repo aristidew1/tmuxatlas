@@ -29,13 +29,17 @@ func TestEnabled(t *testing.T) {
 
 // fakePulse records pactl/pulseaudio calls and answers from its fields.
 type fakePulse struct {
+	mu      sync.Mutex
 	running bool
 	modules string
+	outputs string
 	fail    string
 	calls   []string
 }
 
 func (f *fakePulse) run(_ context.Context, name string, args ...string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	call := name + " " + strings.Join(args, " ")
 	f.calls = append(f.calls, call)
 	if f.fail != "" && strings.Contains(call, f.fail) {
@@ -48,11 +52,17 @@ func (f *fakePulse) run(_ context.Context, name string, args ...string) (string,
 		}
 	case strings.HasPrefix(call, "pactl list short modules"):
 		return f.modules, nil
+	case call == "pactl list source-outputs":
+		return f.outputs, nil
+	case strings.HasPrefix(call, "pactl load-module"):
+		return "42", nil
 	}
 	return "", nil
 }
 
 func (f *fakePulse) called(fragment string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	for _, call := range f.calls {
 		if strings.Contains(call, fragment) {
 			return true
@@ -63,7 +73,8 @@ func (f *fakePulse) called(fragment string) bool {
 
 func newTestMic(t *testing.T, pulse *fakePulse) *Mic {
 	t.Helper()
-	mic := New()
+	mic := New("tmux")
+	mic.subscribe = func(context.Context, func(string)) error { return nil }
 	mic.run = pulse.run
 	mic.asoundrc = filepath.Join(t.TempDir(), ".asoundrc")
 	return mic
@@ -188,7 +199,7 @@ func startStreamServer(t *testing.T, sinks ...*fakeSink) *httptest.Server {
 	mic := newTestMic(t, &fakePulse{running: true})
 	next := 0
 	var mu sync.Mutex
-	mic.start = func() (playback, error) {
+	mic.start = func(string) (playback, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		sink := sinks[next]
@@ -208,6 +219,32 @@ func dial(t *testing.T, server *httptest.Server) *websocket.Conn {
 	}
 	t.Cleanup(func() { conn.Close() })
 	return conn
+}
+
+func dialID(t *testing.T, server *httptest.Server, id string) *websocket.Conn {
+	t.Helper()
+	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http")+"?id="+id, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	return conn
+}
+
+// sendAndWait writes a frame and waits until the sink has received it.
+func sendAndWait(t *testing.T, conn *websocket.Conn, sink *fakeSink, frame []byte) {
+	t.Helper()
+	before := len(sink.bytes())
+	if err := conn.WriteMessage(websocket.BinaryMessage, frame); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for len(sink.bytes()) < before+len(frame) {
+		if time.Now().After(deadline) {
+			t.Fatalf("sink did not receive %v", frame)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 func TestHandleStream(t *testing.T) {
@@ -256,40 +293,43 @@ func TestHandleStream(t *testing.T) {
 		}
 	})
 
-	t.Run("the newest stream takes over", func(t *testing.T) {
+	t.Run("two tabs stream at the same time", func(t *testing.T) {
 		first, second := newFakeSink(), newFakeSink()
 		server := startStreamServer(t, first, second)
-		firstConn := dial(t, server)
-		if err := firstConn.WriteMessage(websocket.BinaryMessage, []byte{1, 1}); err != nil {
-			t.Fatal(err)
-		}
-		deadline := time.Now().Add(5 * time.Second)
-		for len(first.bytes()) == 0 && time.Now().Before(deadline) {
-			time.Sleep(5 * time.Millisecond)
-		}
-		secondConn := dial(t, server)
-		waitClosed(t, first)
-		if err := secondConn.WriteMessage(websocket.BinaryMessage, []byte{2, 2}); err != nil {
-			t.Fatal(err)
-		}
-		deadline = time.Now().Add(5 * time.Second)
-		for len(second.bytes()) == 0 && time.Now().Before(deadline) {
-			time.Sleep(5 * time.Millisecond)
-		}
-		if got := second.bytes(); !bytes.Equal(got, []byte{2, 2}) {
-			t.Errorf("second sink = %v", got)
+		firstConn := dialID(t, server, "tab-one-id")
+		sendAndWait(t, firstConn, first, []byte{1, 1})
+		secondConn := dialID(t, server, "tab-two-id")
+		sendAndWait(t, secondConn, second, []byte{2, 2})
+		sendAndWait(t, firstConn, first, []byte{1, 1, 3, 3}[2:])
+		if got := first.bytes(); !bytes.Equal(got, []byte{1, 1, 3, 3}) {
+			t.Errorf("first sink = %v", got)
 		}
 		select {
-		case <-second.closed:
-			t.Error("second stream must stay open")
+		case <-first.closed:
+			t.Error("another tab must not stop this stream")
 		default:
+		}
+	})
+
+	t.Run("a tab restarting its microphone replaces its own stream", func(t *testing.T) {
+		first, second := newFakeSink(), newFakeSink()
+		server := startStreamServer(t, first, second)
+		sendAndWait(t, dialID(t, server, "same-tab-id"), first, []byte{1, 1})
+		sendAndWait(t, dialID(t, server, "same-tab-id"), second, []byte{2, 2})
+		waitClosed(t, first)
+	})
+
+	t.Run("rejects an invalid id", func(t *testing.T) {
+		_, response, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(startStreamServer(t).URL, "http")+"?id=../x", nil)
+		if err == nil || response == nil || response.StatusCode != http.StatusBadRequest {
+			t.Fatalf("err = %v, response = %v", err, response)
 		}
 	})
 }
 
 func TestHandleStreamReportsSetupFailure(t *testing.T) {
 	mic := newTestMic(t, &fakePulse{running: true, fail: "set-default-source"})
-	mic.start = func() (playback, error) {
+	mic.start = func(string) (playback, error) {
 		t.Error("playback must not start when setup failed")
 		return nil, errors.New("unexpected")
 	}

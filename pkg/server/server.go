@@ -193,11 +193,12 @@ func Run(ctx context.Context, opts *Options) error {
 	// The browser microphone feeds programs on this host, so it needs local tmux.
 	var browserMic *voice.Mic
 	if opts.Client != nil && voice.Enabled(os.Getenv("TMUXATLAS_VOICE")) {
-		browserMic = voice.New()
+		browserMic = voice.New(opts.Client.TmuxPath())
 		go func() {
 			if err := browserMic.Setup(ctx); err != nil {
 				logrus.WithError(err).Warn("voice setup failed")
 			}
+			browserMic.Run(ctx)
 		}()
 	}
 
@@ -736,6 +737,9 @@ func Run(ctx context.Context, opts *Options) error {
 	var ptyHandler *ws.PTYTerminalHandler
 	if opts.Client != nil {
 		ptyHandler = ws.NewPTYTerminalHandler(opts.Client.TmuxPath(), opts.ActivityTracker)
+		if browserMic != nil {
+			ptyHandler.OnSessionUse = browserMic.UseSession
+		}
 	}
 
 	if opts.AuthEnabled {

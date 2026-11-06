@@ -20,6 +20,10 @@ import (
 type PTYTerminalHandler struct {
 	tmuxPath        string
 	activityTracker *activity.Tracker
+
+	// OnSessionUse reports that a browser tab, identified by the id of its
+	// microphone, is working in a tmux session.
+	OnSessionUse func(session, micID string)
 }
 
 // NewPTYTerminalHandler creates a new PTY-based terminal handler
@@ -89,6 +93,14 @@ func (h *PTYTerminalHandler) HandleSession(w http.ResponseWriter, r *http.Reques
 
 	log := logrus.WithField("session", sessionName)
 	log.Info("session ws client connected")
+
+	micID := r.URL.Query().Get("mic")
+	useSession := func() {
+		if h.OnSessionUse != nil && micID != "" {
+			h.OnSessionUse(sessionName, micID)
+		}
+	}
+	useSession()
 
 	// Spawn tmux attach in a PTY
 	ptySess, err := tmux.NewPTYSession(h.tmuxPath, sessionName, uint16(cols), uint16(rows))
@@ -165,6 +177,7 @@ func (h *PTYTerminalHandler) HandleSession(w http.ResponseWriter, r *http.Reques
 			}
 			if msg.Type == "voice-hold" {
 				if msg.On {
+					useSession()
 					hold.Start()
 				} else {
 					hold.Stop()
@@ -177,6 +190,7 @@ func (h *PTYTerminalHandler) HandleSession(w http.ResponseWriter, r *http.Reques
 			}
 
 		case websocket.BinaryMessage:
+			useSession()
 			if _, err := ptySess.Write(message); err != nil {
 				log.WithError(err).Debug("PTY write failed")
 				break

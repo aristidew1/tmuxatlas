@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { createPcmEncoder } from '../lib/micPcm'
+import { micTabId } from '../lib/micTab'
 
 export type MicState = 'off' | 'starting' | 'on'
 
@@ -134,7 +135,7 @@ export function useMicStream(allowed: boolean) {
       }
 
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const socket = new WebSocket(`${protocol}//${window.location.host}/ws/mic`)
+      const socket = new WebSocket(`${protocol}//${window.location.host}/ws/mic?id=${micTabId}`)
       socket.binaryType = 'arraybuffer'
       cleanups.push(() => {
         socket.onclose = null

@@ -1,8 +1,11 @@
 package tmux
 
 import (
+	"context"
 	"os"
 	"os/exec"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,6 +16,7 @@ import (
 var (
 	ptyCloseGrace     = 2 * time.Second
 	ptyTerminateGrace = time.Second
+	paneIDPattern     = regexp.MustCompile(`^%[0-9]+$`)
 )
 
 // PTYSession wraps a PTY running `tmux attach-session`
@@ -24,6 +28,19 @@ type PTYSession struct {
 
 // NewPTYSession spawns `tmux attach-session -t <session>` in a PTY
 func NewPTYSession(tmuxPath, sessionName string, cols, rows uint16) (*PTYSession, error) {
+	// A mouse selection or scroll can leave the active pane in tmux copy mode
+	// after the browser disconnects. Resume the live view when it reattaches;
+	// never send a keystroke to the program running in the pane.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	pane, err := exec.CommandContext(ctx, tmuxPath, "display-message", "-p", "-t", "="+sessionName+":", "#{pane_id}").Output()
+	paneID := strings.TrimSpace(string(pane))
+	if err == nil && paneIDPattern.MatchString(paneID) {
+		err = exec.CommandContext(ctx, tmuxPath, "if-shell", "-F", "-t", paneID, "#{==:#{pane_mode},copy-mode}", "send-keys -t "+paneID+" -X cancel").Run()
+	}
+	if err != nil {
+		logrus.WithError(err).WithField("session", sessionName).Debug("could not leave tmux copy mode")
+	}
+	cancel()
 	cmd := exec.Command(tmuxPath, "attach-session", "-t", sessionName)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 

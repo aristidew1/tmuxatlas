@@ -361,7 +361,7 @@ export function Sidebar({
               session={session.name}
               ownerName={ownerName}
               testId="sidebar-owner-badge"
-              className="self-center"
+              className="absolute bottom-1 right-8 !py-0"
             />
           )}
           {(!collapsed || mobileDrawerActive) && (

@@ -140,6 +140,7 @@ async function openWorkspace(
   viewport: { width: number; height: number },
   expandComposer: boolean,
   terminalMessages?: (string | Buffer)[],
+  mouseTracking = false,
 ) {
   await page.setViewportSize(viewport)
   await page.addInitScript(now => {
@@ -159,7 +160,7 @@ async function openWorkspace(
         socket.send(JSON.stringify({ type: 'image-result', error: '' }))
       }
     })
-    socket.send([
+    socket.send((mouseTracking ? '\u001b[?1003h\u001b[?1006h' : '') + [
       '\u001b[1;36mTmuxAtlas Workspace\u001b[0m',
       '',
       '$ codex --workspace tmuxatlas',
@@ -253,4 +254,33 @@ test('Ctrl+V pastes browser text and images without sending the control key', as
   await expect.poll(() => messages.some(message => typeof message === 'string' && message.includes('"type":"image"'))).toBe(true)
   await expect(page.getByRole('status').filter({ hasText: 'Image pasted into Terminal.' })).toBeVisible()
   expect(messages.filter(Buffer.isBuffer).map(data => data.toString()).join('')).not.toContain('\x16')
+})
+
+for (const mouseTracking of [false, true]) test(`mouse selection and clipboard work with mouse tracking ${mouseTracking ? 'on' : 'off'}`, async ({ page, context }) => {
+  const messages: (string | Buffer)[] = []
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: baseURL })
+  await openWorkspace(page, 'dark', { width: 1024, height: 768 }, false, messages, mouseTracking)
+  const row = page.locator('.xterm-rows > div').filter({ hasText: 'TmuxAtlas Workspace' }).first()
+  await expect(row).toBeVisible()
+  const box = await row.boundingBox()
+  if (!box) throw new Error('terminal row has no bounds')
+  if (mouseTracking) {
+    await page.mouse.click(box.x + 100, box.y + box.height / 2)
+    await expect.poll(() => messages.filter(Buffer.isBuffer).map(data => data.toString()).join('')).toContain('\x1b[<0;')
+    messages.length = 0
+  }
+  await page.mouse.move(box.x + 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + 85, box.y + box.height / 2, { steps: 5 })
+  await page.mouse.up()
+  await page.mouse.move(box.x + 100, box.y + box.height / 2)
+  await expect(page.getByRole('button', { name: 'Copy Terminal selection' })).toBeEnabled()
+  await page.keyboard.press('Control+C')
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('TmuxAtlas')
+  await expect(page.getByRole('button', { name: 'Copy Terminal selection' })).toBeEnabled()
+  expect(messages.filter(Buffer.isBuffer).map(data => data.toString()).join('')).not.toContain('\x03')
+  await page.keyboard.press('Control+V')
+  await expect.poll(() => messages.filter(Buffer.isBuffer).map(data => data.toString()).join('')).toContain('TmuxAtlas')
+  await page.keyboard.press('Control+C')
+  await expect.poll(() => messages.filter(Buffer.isBuffer).map(data => data.toString()).join('')).toContain('\x03')
 })

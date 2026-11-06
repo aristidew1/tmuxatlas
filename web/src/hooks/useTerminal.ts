@@ -12,6 +12,7 @@ import { usePreferences } from './usePreferences'
 import { getXtermTheme } from '../theme'
 import type { MobileTerminalInput } from '../lib/mobileTerminalInput'
 import { attachAndroidTerminalInput } from '../lib/androidTerminalInput'
+import { enableTerminalMouseSelection } from '../lib/terminalMouseSelection'
 import {
   TerminalInputError,
   encodeTerminalCommand,
@@ -338,6 +339,7 @@ export function useTerminal(
     termRef.current = term
     fitAddonRef.current = fitAddon
     term.open(container)
+    domCleanupRef.current.push(enableTerminalMouseSelection(container, term))
     if (/Android/i.test(navigator.userAgent) && term.textarea) {
       domCleanupRef.current.push(attachAndroidTerminalInput(container, term.textarea, data => {
         const socket = wsRef.current
@@ -434,10 +436,7 @@ export function useTerminal(
         event.key.toLowerCase() === 'c' &&
         term.hasSelection()
       ) {
-        void writeClipboard(term.getSelection()).then(() => {
-          if (terminalGenerationRef.current === terminalGeneration) setHasSelection(false)
-        }).catch(() => {})
-        term.clearSelection()
+        void writeClipboard(term.getSelection()).catch(() => {})
         return false
       }
       return true

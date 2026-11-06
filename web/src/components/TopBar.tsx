@@ -89,7 +89,7 @@ export function TopBar({
   const navigation: Array<readonly [string, string, () => void]> = [
     ['overview', 'Vue d’ensemble', onOverview],
     ['wall', 'Mur', onWall],
-    ...(role !== 'user' ? ([['monitoring', 'Monitoring', onMonitoring]] as const) : []),
+    ['monitoring', 'Monitoring', onMonitoring] as const,
     ...(role === 'admin' && onAdmin ? ([['admin', 'Administration', onAdmin]] as const) : []),
   ]
   const alertColor = actionable.some(event => event.status === 'error')
@@ -230,13 +230,7 @@ export function TopBar({
         <Settings size={16} aria-hidden />
       </button>
       {authMode === 'accounts' && onLogout && (
-        <button
-          type="button"
-          className={button}
-          onClick={onLogout}
-          aria-label="Se déconnecter"
-          title="Se déconnecter"
-        >
+        <button type="button" className={button} onClick={onLogout} aria-label="Se déconnecter" title="Se déconnecter">
           <LogOut size={16} aria-hidden />
           <span className="hidden lg:inline">Se déconnecter</span>
         </button>

@@ -137,9 +137,7 @@ test('mode accounts : parcours complet admin, alice et bob, isolation, attributi
   alicePage.on('response', response => {
     const url = response.url()
     if (
-      response.status() === 403 ||
-      url.includes('/api/stats') ||
-      url.includes('/api/monitor')
+      response.status() === 403
     ) {
       aliceForbiddenCalls.push(`${response.status()} ${url}`)
     }
@@ -152,7 +150,7 @@ test('mode accounts : parcours complet admin, alice et bob, isolation, attributi
 
   await expect(alicePage.getByRole('button', { name: 'Nouvelle session' }).first()).toBeVisible()
   await expect(alicePage.getByRole('button', { name: 'Administration' })).toHaveCount(0)
-  await expect(alicePage.getByRole('button', { name: 'Monitoring' })).toHaveCount(0)
+  await expect(alicePage.getByRole('button', { name: 'Monitoring' }).first()).toBeVisible()
 
   await alicePage.getByRole('button', { name: 'Nouvelle session' }).first().click()
   const dialog = alicePage.getByRole('dialog')

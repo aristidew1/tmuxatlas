@@ -244,7 +244,7 @@ describe('Tableau de bord /admin', () => {
 })
 
 describe('Vue non-admin : claim, release, erreur 409 et absence de routes interdites', () => {
-  it('n’appelle pas /api/stats pour un non-admin et affiche toutes ses sessions', async () => {
+  it('affiche sessions et ressources à un non-admin', async () => {
     const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)
 
@@ -264,12 +264,11 @@ describe('Vue non-admin : claim, release, erreur 409 et absence de routes interd
       />,
     )
 
-    expect(fetchMock).not.toHaveBeenCalledWith('/api/stats', expect.anything())
-    expect(screen.queryByText(/CPU/)).not.toBeInTheDocument()
+    expect(screen.getByText(/CPU/)).toBeInTheDocument()
     expect(screen.getByText('ma-session')).toBeInTheDocument()
   })
 
-  it('masque Monitoring et Administration pour un utilisateur non-admin et réduit les Réglages', () => {
+  it('montre Monitoring et masque Administration pour un utilisateur non-admin et réduit les Réglages', () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)
 
@@ -326,7 +325,7 @@ describe('Vue non-admin : claim, release, erreur 409 et absence de routes interd
       </>,
     )
 
-    expect(screen.queryByRole('button', { name: 'Monitoring' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Monitoring' }).length).toBeGreaterThan(0)
     expect(screen.queryByRole('button', { name: 'Administration' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Se déconnecter' })).toBeInTheDocument()
     expect(screen.getByText('Changer le mot de passe')).toBeInTheDocument()

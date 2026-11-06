@@ -16,6 +16,7 @@ import (
 )
 
 var accountUserRoutes = map[string]bool{
+	"GET /api/voice": true, "GET /api/monitor": true, "GET /api/stats": true, "GET /ws/mic": true,
 	"GET /api/preferences": true, "POST /api/auth/change-password": true, "GET /api/accounts/directory": true,
 	"GET /api/sessions": true, "GET /api/hosts": true, "GET /api/tool-events": true,
 	"GET /api/activity": true, "GET /api/session/directories": true,
@@ -35,10 +36,9 @@ var accountOtherRoutes = map[string]string{
 	"PATCH /api/admin/users/{id}": "admin", "DELETE /api/admin/users/{id}": "admin",
 	"GET /api/admin/sessions": "admin", "GET /api/peers": "admin",
 	"GET /api/agent-status": "admin", "DELETE /api/tool-events": "admin",
-	"GET /api/voice": "admin", "GET /api/monitor": "admin", "GET /api/stats": "admin",
 	"GET /api/push/vapid-key": "admin", "POST /api/push/subscribe": "admin",
 	"POST /api/push/unsubscribe": "admin", "PUT /api/preferences": "admin", "POST /api/pair": "admin",
-	"GET /ws/mic": "admin", "GET /ws/peer": "peer", "GET /ws/peer-pty": "peer",
+	"GET /ws/peer": "peer", "GET /ws/peer-pty": "peer",
 	"POST /api/pair/complete": "peer", "GET /*": "public",
 	"CONNECT /api/*": "denied", "DELETE /api/*": "denied", "GET /api/*": "denied",
 	"HEAD /api/*": "denied", "OPTIONS /api/*": "denied", "PATCH /api/*": "denied",

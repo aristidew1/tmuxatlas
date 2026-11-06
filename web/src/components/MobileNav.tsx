@@ -23,9 +23,7 @@ export function MobileNav({
   const items = [
     { label: 'À traiter', icon: Inbox, action: onOverview, active: currentView === 'overview' },
     { label: 'Sessions', icon: List, action: onSessions, active: false },
-    ...(role !== 'user'
-      ? [{ label: 'Monitoring', icon: Activity, action: onMonitoring, active: currentView === 'monitoring' }]
-      : []),
+    { label: 'Monitoring', icon: Activity, action: onMonitoring, active: currentView === 'monitoring' },
     ...(role === 'admin' && onAdmin
       ? [{ label: 'Administration', icon: Shield, action: onAdmin, active: currentView === 'admin' }]
       : []),

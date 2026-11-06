@@ -410,7 +410,7 @@ function AppInner({
       navigateTo(null)
       return
     }
-    if (role === 'user' && (currentView === 'monitoring' || currentView === 'setup')) {
+    if (role === 'user' && currentView === 'setup') {
       navigateTo(null)
     }
   }, [currentView, navigateTo, role])
@@ -650,7 +650,7 @@ function AppInner({
           canReconnect: showingTerminal,
           canSignOut: Boolean(onLogout),
           hasAttention: allToolEvents.some(event => event.status === 'waiting' || event.status === 'error'),
-          canMonitor: role !== 'user',
+          canMonitor: true,
           isAdmin: role === 'admin',
         },
         handlers: commandHandlers,
@@ -919,7 +919,7 @@ function AppInner({
                   fullscreen={terminalFullscreen}
                   zenMode={zenMode}
                   hostLocal={activeHost?.local === true}
-                  voiceAllowed={role !== 'user'}
+                  voiceAllowed
                   claudeActive={activePane?.current_command === 'claude'}
                   talkSlot={statusBarSlot}
                   onToggleFullscreen={toggleFullscreen}

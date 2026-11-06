@@ -74,7 +74,6 @@ export function Overview({
   const isNonAdminUser = role === 'user'
 
   useEffect(() => {
-    if (isNonAdminUser) return
     const controller = new AbortController()
     const load = async () => {
       try {
@@ -90,10 +89,9 @@ export function Overview({
       controller.abort()
       clearInterval(timer)
     }
-  }, [prefs.overview_refresh_interval, isNonAdminUser])
+  }, [prefs.overview_refresh_interval])
 
   const visibleSessions = sessions
-
 
   const handleClaim = async (hostId: string, sessionName: string) => {
     const key = `${hostId}/${sessionName}`
@@ -129,15 +127,13 @@ export function Overview({
     }
   }
 
-  const reason = isNonAdminUser
-    ? undefined
-    : Object.values(appState.state.projection.health)
-        .map(health => (health.facts as unknown as { summary?: string } | undefined)?.summary)
-        .find(summary => summary && healthReasons[summary])
+  const reason = Object.values(appState.state.projection.health)
+    .map(health => (health.facts as unknown as { summary?: string } | undefined)?.summary)
+    .find(summary => summary && healthReasons[summary])
   const active = stats?.agents.active ?? 0
   const waiting = stats?.agents.waiting ?? pendingAlerts.filter(e => e.status === 'waiting').length
   const errors = stats?.agents.error ?? pendingAlerts.filter(e => e.status === 'error').length
-  const total = isNonAdminUser ? visibleSessions.length : (stats?.sessions.total ?? visibleSessions.length)
+  const total = stats?.sessions.total ?? visibleSessions.length
   const groups = new Map<string, Session[]>()
   visibleSessions.forEach(session => groups.set(session.host, [...(groups.get(session.host) || []), session]))
 
@@ -164,7 +160,7 @@ export function Overview({
               <strong className="font-medium text-foreground">{errors}</strong> erreur{errors === 1 ? '' : 's'}
             </span>
           )}
-          {!isNonAdminUser && (
+          {
             <button
               type="button"
               onClick={onOpenMonitoring}
@@ -173,7 +169,7 @@ export function Overview({
               CPU {stats?.system?.cpu_percent != null ? `${Math.round(stats.system.cpu_percent)} %` : '—'} · Mémoire{' '}
               {stats?.system?.memory ? `${Math.round(stats.system.memory.percent)} %` : '—'}
             </button>
-          )}
+          }
         </div>
         {onCreateSession && (
           <Button

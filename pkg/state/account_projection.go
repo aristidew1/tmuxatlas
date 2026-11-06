@@ -37,6 +37,9 @@ func (p Projection) ForAccount(accountID string) AccountProjection {
 		ToolEvents: make(map[ToolEventKey]ToolEvent), Activity: make(map[ActivityKey]Activity),
 		Health: make(map[HostKey]Health),
 	}
+	for key, health := range p.Health {
+		result.Health[key] = health
+	}
 	// A new account owns nothing yet but must be able to pick a host for its
 	// first session, so online hosts are visible with identity fields only.
 	for key, host := range p.Hosts {

@@ -5,11 +5,13 @@ import { parseSessionKey, type Session } from '../hooks/useSessions'
 import type { WorkspaceSession, WorkspaceStatus, WorkspaceViewModel } from '../workspace/model'
 import { filterWorkspaceSessions, isAttentionStatus, workspaceStatusLabel } from '../workspace/model'
 import { Button, Dialog, StatusIcon } from './ui'
-import { Search, Pin, ChevronDown, ChevronRight, Pencil, Unplug, Trash2 } from 'lucide-react'
-import { resolveOwnerName } from '../lib/accountsApi'
+import { Search, Pin, ChevronDown, ChevronRight, Pencil, Unplug, Trash2, Lock, User } from 'lucide-react'
+import { claimSession, fetchAccountDirectory, resolveOwnerName } from '../lib/accountsApi'
 import { OwnerPicker } from './OwnerPicker'
 import { useHostLabel } from '../lib/hostLabel'
 import { focusableElements, makeOutsideInert } from './ui/overlayAccessibility'
+
+import type { FreeSession } from '../hooks/useSessions'
 
 interface SidebarProps {
   workspace: WorkspaceViewModel
@@ -27,6 +29,57 @@ interface SidebarProps {
   onRuntimeError?: (message: string) => void
   mobileOpen?: boolean
   onMobileClose?: () => void
+  /** Sessions the account cannot open: other accounts' (read-only) and free ones (assignable). */
+  readOnlySessions?: FreeSession[]
+}
+
+function ReadOnlySessionRow({
+  session,
+  ownerName,
+  onError,
+}: {
+  session: FreeSession
+  ownerName: string
+  onError?: (message: string) => void
+}) {
+  const [claiming, setClaiming] = useState(false)
+  const claim = async () => {
+    setClaiming(true)
+    try {
+      await claimSession(session.host, session.name)
+    } catch (error) {
+      onError?.(error instanceof Error ? error.message : 'Impossible de s’assigner cette session.')
+    } finally {
+      setClaiming(false)
+    }
+  }
+  return (
+    <li
+      data-testid="sidebar-readonly-session"
+      className="flex min-h-10 items-center gap-2 rounded-lg px-2.5 py-1 text-muted-foreground"
+    >
+      <Lock size={14} aria-hidden="true" className="shrink-0" />
+      <span className="min-w-0 flex-1 truncate text-sm" title={session.name}>
+        {session.name}
+      </span>
+      {session.owner ? (
+        <span className="inline-flex shrink-0 items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-2xs text-secondary-foreground">
+          <User size={12} aria-hidden="true" />
+          <span className="max-w-20 truncate">{ownerName}</span>
+        </span>
+      ) : (
+        <button
+          type="button"
+          disabled={claiming}
+          aria-label={`M’assigner la session ${session.name}`}
+          onClick={() => void claim()}
+          className="ui-focus-ring shrink-0 rounded bg-secondary px-1.5 py-0.5 text-2xs text-secondary-foreground hover:bg-secondary/70 disabled:opacity-50"
+        >
+          M’assigner
+        </button>
+      )}
+    </li>
+  )
 }
 
 const filters = [
@@ -94,9 +147,24 @@ export function Sidebar({
   onRuntimeError,
   mobileOpen = false,
   onMobileClose,
+  readOnlySessions = [],
 }: SidebarProps) {
   const hostLabel = useHostLabel()
   const [query, setQuery] = useState('')
+  const [directory, setDirectory] = useState<Map<string, string>>(new Map())
+  const hasForeignSessions = readOnlySessions.some(session => session.owner)
+  useEffect(() => {
+    if (!hasForeignSessions) return
+    let cancelled = false
+    fetchAccountDirectory()
+      .then(accounts => {
+        if (!cancelled) setDirectory(new Map(accounts.map(account => [account.id, account.username])))
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [hasForeignSessions])
   const [statusFilter, setStatusFilter] = useState<Filter>('all')
   const [expandedHosts, setExpandedHosts] = useState<Set<string>>(() => new Set(workspace.hosts.map(host => host.id)))
   const knownHostsRef = useRef(new Set(workspace.hosts.map(host => host.id)))
@@ -281,7 +349,8 @@ export function Sidebar({
   const renderSession = (session: WorkspaceSession, showHost = false) => {
     const selected = selectedSession === session.key
     const isRenaming = renaming?.key === session.key
-    const ownerName = session.ownerName !== undefined ? session.ownerName : resolveOwnerName(session.owner ?? session.source.owner)
+    const ownerName =
+      session.ownerName !== undefined ? session.ownerName : resolveOwnerName(session.owner ?? session.source.owner)
     return (
       <li key={session.key}>
         <div
@@ -388,10 +457,17 @@ export function Sidebar({
   }
 
   const filteredKeys = new Set(filtered.map(session => session.key))
+  const ownerNameOf = (session: FreeSession) => directory.get(session.owner ?? '') ?? 'Autre compte'
+  const needle = query.trim().toLowerCase()
+  const visibleReadOnly = readOnlySessions.filter(session => {
+    if (statusFilter !== 'all') return false
+    return !needle || `${session.name} ${ownerNameOf(session)}`.toLowerCase().includes(needle)
+  })
   const hostGroups = workspace.hosts.flatMap(host => {
     const hostSessions = host.sessions.filter(session => filteredKeys.has(session.key))
-    if (!hostSessions.length) return []
-    return [{ host, sessions: hostSessions }]
+    const hostReadOnly = visibleReadOnly.filter(session => session.host === host.id)
+    if (!hostSessions.length && !hostReadOnly.length) return []
+    return [{ host, sessions: hostSessions, readOnly: hostReadOnly }]
   })
 
   const toggleHost = (hostId: string) => {
@@ -485,7 +561,7 @@ export function Sidebar({
         )}
 
         <nav aria-label="Navigation des hôtes et sessions" className="flex-1 overflow-y-auto overscroll-contain p-2">
-          {filtered.length === 0 ? (
+          {filtered.length === 0 && visibleReadOnly.length === 0 ? (
             <div className="p-4 text-center text-sm text-muted-foreground">
               {workspace.sessions.length === 0 ? 'Aucune session' : 'Aucune session ne correspond à ce filtre'}
             </div>
@@ -493,7 +569,7 @@ export function Sidebar({
             <ul className="space-y-1">{filtered.map(session => renderSession(session))}</ul>
           ) : (
             <ul className="space-y-1">
-              {hostGroups.map(({ host, sessions }) => (
+              {hostGroups.map(({ host, sessions, readOnly }) => (
                 <li key={host.id}>
                   <button
                     type="button"
@@ -517,7 +593,9 @@ export function Sidebar({
                     <span className="min-w-0 flex-1 truncate">
                       {hostLabel(host.id, host.name === host.id ? 'Hôte' : host.name)}
                     </span>
-                    <span className="shrink-0 font-mono text-2xs text-muted-foreground">{sessions.length}</span>
+                    <span className="shrink-0 font-mono text-2xs text-muted-foreground">
+                      {sessions.length + readOnly.length}
+                    </span>
                     {sessions.some(session => isAttentionStatus(session.status)) && (
                       <span className="shrink-0 rounded-full bg-warning/15 px-1.5 py-0.5 text-2xs text-warning">
                         {sessions.filter(session => isAttentionStatus(session.status)).length}
@@ -527,6 +605,14 @@ export function Sidebar({
                   {(filtering || expandedHosts.has(host.id)) && (
                     <ul className="ml-3 space-y-1 border-l border-sidebar-border pl-1">
                       {sessions.map(session => renderSession(session))}
+                      {readOnly.map(session => (
+                        <ReadOnlySessionRow
+                          key={`${session.host}/${session.name}`}
+                          session={session}
+                          ownerName={ownerNameOf(session)}
+                          onError={onRuntimeError}
+                        />
+                      ))}
                     </ul>
                   )}
                 </li>

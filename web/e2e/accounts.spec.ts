@@ -188,7 +188,7 @@ test('mode accounts : parcours complet admin, alice et bob, isolation, attributi
   await expect(aliceCard).toBeVisible()
 
   // Bob s'assigne la session libre free-session
-  await expect(bobPage.getByText('free-session')).toBeVisible()
+  await expect(bobPage.getByText('free-session').first()).toBeVisible()
   await bobPage.getByRole('button', { name: "M'assigner" }).click()
   await expect(bobPage.getByTestId('session-owner-badge').first()).toHaveText('bob')
   await expect(bobPage.getByRole('button', { name: 'Libérer' })).toBeVisible()

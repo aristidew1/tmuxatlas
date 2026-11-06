@@ -815,6 +815,7 @@ function AppInner({
         {!terminalFullscreen && !zenMode && (
           <Sidebar
             workspace={workspace}
+            readOnlySessions={role === 'user' ? freeSessions : []}
             selectedSession={selectedSession}
             collapsed={sidebarCollapsed}
             collapseMode={(prefs.sidebar.collapse_mode || 'small') as 'small' | 'hidden'}

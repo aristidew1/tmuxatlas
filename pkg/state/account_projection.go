@@ -49,16 +49,15 @@ func (p Projection) ForAccount(accountID string) AccountProjection {
 		if session.Name == "tmuxatlas-ctrl" {
 			continue
 		}
-		if session.Owner == "" {
-			result.Sessions[key] = freeSession{Host: session.HostID, Name: session.Name}
-		} else if accountID != "" && string(session.Owner) == accountID {
+		// The owner is a label, not an access right: every signed-in account sees
+		// every session. Only an unauthenticated view (empty ID) stays minimal.
+		if accountID != "" {
 			result.Sessions[key] = session
 			owned[key] = true
 			if host, ok := p.Hosts[session.HostKey]; ok {
 				result.Hosts[session.HostKey] = minimalHost(host)
 			}
 		} else {
-			// Everyone may see who owns what: name and owner only, no details.
 			result.Sessions[key] = freeSession{Host: session.HostID, Name: session.Name, Owner: session.Owner}
 		}
 	}
@@ -92,8 +91,6 @@ func (p Projection) AccountHostViews(accountID string) []map[string]any {
 	for _, value := range p.AccountSessionViews(accountID) {
 		switch session := value.(type) {
 		case *tmux.Session:
-			grouped[session.Host] = append(grouped[session.Host], session)
-		case freeSession:
 			grouped[session.Host] = append(grouped[session.Host], session)
 		}
 	}
@@ -141,17 +138,6 @@ func (p Projection) AccountSessionViews(accountID string) []any {
 	views := make([]any, 0)
 	for _, session := range p.OwnedBy(accountID).SessionViews() {
 		views = append(views, session)
-	}
-	keys := make([]SessionKey, 0)
-	for key, session := range p.Sessions {
-		if session.Name != "tmuxatlas-ctrl" && (session.Owner == "" || string(session.Owner) != accountID) {
-			keys = append(keys, key)
-		}
-	}
-	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
-	for _, key := range keys {
-		session := p.Sessions[key]
-		views = append(views, freeSession{Host: session.HostID, Name: session.Name, Owner: session.Owner})
 	}
 	return views
 }

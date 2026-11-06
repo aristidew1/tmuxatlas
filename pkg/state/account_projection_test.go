@@ -35,9 +35,10 @@ func TestAccountProjectionAfterReassignment(t *testing.T) {
 			t.Fatalf("information leak: %s", data)
 		}
 	}
+	// The owner is a label: changing it never hides a session from an account.
 	check("alice", true)
-	check("bob", false)
-	check("", false)
+	check("bob", true)
+	check("", true)
 }
 
 func TestNewAccountSeesOnlyOnlineHostsWithIdentityFields(t *testing.T) {

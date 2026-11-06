@@ -184,17 +184,10 @@ func handleAccountOwnership(w http.ResponseWriter, r *http.Request, opts *Option
 	}
 	owner := identity.User.ID
 	ownerName := identity.User.Username
-	force := identity.User.Role == "admin"
-	// An owner may hand their own session to another account. The policy mutex,
-	// held for this whole handler, keeps the check and the change atomic in Atlas.
-	if !force && operation == "claim" && request.Owner != "" {
-		if !policy.owns(request.HostID, request.Session, "", identity.User.ID) {
-			http.Error(w, "accès interdit", http.StatusForbidden)
-			return
-		}
-		force = true
-	}
-	if force && request.Owner != "" {
+	// Any account may reassign or release any session. Only a plain claim, with
+	// no explicit owner, is limited to a free session.
+	force := identity.User.Role == "admin" || operation == "release" || request.Owner != ""
+	if request.Owner != "" {
 		owner = request.Owner
 		if operation == "claim" {
 			users, err := opts.AccountsAuth.Store.List()
@@ -220,11 +213,6 @@ func handleAccountOwnership(w http.ResponseWriter, r *http.Request, opts *Option
 	if err != nil {
 		writeRuntimeError(w, err)
 		return
-	}
-	for _, connection := range policy.connections {
-		if connection.host == request.HostID && connection.session == request.Session && (operation == "release" || connection.accountID != owner) {
-			connection.cancel()
-		}
 	}
 	if opts.PeerMgr != nil && !opts.PeerMgr.IsLocal(request.HostID) {
 		if operation == "release" {

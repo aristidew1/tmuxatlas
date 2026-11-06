@@ -30,7 +30,7 @@ import (
 func TestOwnerNameIsMarkedInTmuxSession(t *testing.T)  { runAccountsIntegration(t, "owner-name") }
 func TestNewAccountCanCreateFirstSession(t *testing.T) { runAccountsIntegration(t, "first-session") }
 func TestOwnerCanTransferOwnSession(t *testing.T)      { runAccountsIntegration(t, "transfer") }
-func TestUserCannotTransferSomeoneElsesSession(t *testing.T) {
+func TestAnyAccountCanReassignAnySession(t *testing.T) {
 	runAccountsIntegration(t, "transfer-denied")
 }
 func TestAccountDirectoryExposesOnlyNames(t *testing.T)   { runAccountsIntegration(t, "directory") }
@@ -224,21 +224,21 @@ func runAccountsIntegration(t *testing.T, scenario string) {
 			if got := ownerOf("alice-work"); got != "bob" {
 				t.Fatalf("propriétaire : %q", got)
 			}
-			if code := give("alice-work", alice.ID, aliceLogin); code != http.StatusForbidden {
+			if code := give("alice-work", alice.ID, aliceLogin); code != http.StatusOK {
 				t.Fatalf("reprise après transfert : %d", code)
 			}
 			return
 		}
-		if code := give("alice-work", bob.ID, bobLogin); code != http.StatusForbidden {
-			t.Fatalf("session d'autrui : %d", code)
+		if code := give("alice-work", bob.ID, bobLogin); code != http.StatusOK {
+			t.Fatalf("réattribution par un autre compte : %d", code)
 		}
-		if code := give("still-free", bob.ID, aliceLogin); code != http.StatusForbidden {
-			t.Fatalf("session libre donnée à un tiers : %d", code)
+		if got := ownerOf("alice-work"); got != "bob" {
+			t.Fatalf("propriétaire : %q", got)
 		}
 		if code := give("alice-work", "compte-inexistant", aliceLogin); code == http.StatusOK {
 			t.Fatal("transfert vers un compte inexistant accepté")
 		}
-		if got := ownerOf("alice-work"); got == "bob" {
+		if got := ownerOf("alice-work"); got != "bob" {
 			t.Fatalf("propriétaire modifié : %q", got)
 		}
 		return
@@ -290,8 +290,8 @@ func runAccountsIntegration(t *testing.T, scenario string) {
 				continue
 			}
 			foreign = true
-			if len(session) != 3 || session["owner"] == nil {
-				t.Fatalf("bob ne doit voir que le nom et le propriétaire : %v", session)
+			if session["owner"] == nil {
+				t.Fatalf("propriétaire absent : %v", session)
 			}
 		}
 		if !foreign {
@@ -477,18 +477,10 @@ func runAccountsIntegration(t *testing.T, scenario string) {
 	if response.StatusCode != http.StatusOK || !bytes.Contains(data, []byte("bob-work")) || !bytes.Contains(data, []byte("still-free")) {
 		t.Fatalf("projection bob : %d %s", response.StatusCode, data)
 	}
-	var visible []map[string]any
-	if err := json.Unmarshal(data, &visible); err != nil {
-		t.Fatal(err)
-	}
-	for _, session := range visible {
-		if name := session["name"]; (name == "alice-work" || name == "free-work") && len(session) != 3 {
-			t.Fatalf("détails exposés à bob : %v", session)
-		}
-	}
 	response = call(http.MethodGet, "/ws/session?host="+peerManager.LocalID()+"&name=free-work", "", bobLogin)
 	response.Body.Close()
-	if response.StatusCode != http.StatusForbidden {
+	// A plain GET passes the access check, then fails the WebSocket upgrade.
+	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("PTY d'autrui : %d", response.StatusCode)
 	}
 	headers := http.Header{"Origin": []string{base}, "Cookie": []string{aliceLogin.cookie.String()}}
@@ -507,10 +499,12 @@ func runAccountsIntegration(t *testing.T, scenario string) {
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("réattribution : %s", response.Status)
 	}
+	// The owner is a label: a reassignment leaves open terminals connected.
+	_ = pty.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 	for {
 		if _, _, err := pty.ReadMessage(); err != nil {
-			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				t.Fatal("PTY encore ouvert après réattribution")
+			if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
+				t.Fatalf("PTY fermé par la réattribution : %v", err)
 			}
 			break
 		}

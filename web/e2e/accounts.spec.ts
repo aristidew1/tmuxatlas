@@ -176,22 +176,17 @@ test('mode accounts : parcours complet admin, alice et bob, isolation, attributi
   await bobPage.getByLabel('Mot de passe').fill('bob-password-123')
   await bobPage.getByRole('button', { name: 'Se connecter' }).click()
 
-  await expect(bobPage.getByText('Sessions libres')).toBeVisible()
-  // Bob voit à qui appartient la session d'Alice, sans pouvoir l'ouvrir.
-  const aliceCard = bobPage.getByTestId('other-session').filter({ hasText: 'alice-session' })
-  await expect(aliceCard).toContainText('alice')
-  await expect(aliceCard.getByRole('button')).toHaveCount(0)
-
-  // Accès direct par URL refusé / redirigé proprement vers /
+  // Le propriétaire est une étiquette : Bob voit et ouvre la session d'Alice.
+  await expect(bobPage.getByText('alice-session').first()).toBeVisible()
   await bobPage.goto(aliceSessionUrl)
-  await expect(bobPage).toHaveURL(`${baseURL}/`)
-  await expect(aliceCard).toBeVisible()
+  await expect(bobPage).toHaveURL(aliceSessionUrl)
+  await expect(bobPage.locator('.xterm')).toBeVisible()
+  await bobPage.goto(baseURL)
 
-  // Bob s'assigne la session libre free-session
-  await expect(bobPage.getByText('free-session').first()).toBeVisible()
-  await bobPage.getByRole('button', { name: "M'assigner" }).click()
-  await expect(bobPage.getByTestId('session-owner-badge').first()).toHaveText('bob')
-  await expect(bobPage.getByRole('button', { name: 'Libérer' })).toBeVisible()
+  // Bob s'assigne la session libre depuis son badge
+  await bobPage.getByRole('button', { name: /Changer le propriétaire de free-session/ }).first().click()
+  await bobPage.getByRole('menuitem', { name: 'bob' }).click()
+  await expect(bobPage.getByRole('button', { name: /Changer le propriétaire de free-session/ }).first()).toContainText('bob')
 
   // 5. Admin voit les propriétaires des sessions, puis désactive bob et la page de bob repart au login
   await page.reload()

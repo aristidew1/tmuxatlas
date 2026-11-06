@@ -63,7 +63,7 @@ func accountWebSocket(t *testing.T, sessions *auth.SessionManager, id, endpoint 
 	return conn
 }
 
-func TestAccountProjectionNeverLeaksAfterReassign(t *testing.T) {
+func TestAccountProjectionKeepsSessionAfterReassign(t *testing.T) {
 	c, sessions, alice, bob, endpoint := accountWebSocketFixture(t)
 	key := state.NewSessionKey("host", "secret-session")
 	windowKey := state.NewWindowKey("host", "secret-session", "@1")
@@ -88,7 +88,7 @@ func TestAccountProjectionNeverLeaksAfterReassign(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(after), `"type":"snapshot"`) || strings.Contains(string(after), "secret-window") || strings.Contains(string(after), "secret-command") {
+	if !strings.Contains(string(after), `"type":"snapshot"`) || !strings.Contains(string(after), "secret-command") {
 		t.Fatalf("projection après réattribution : %s", after)
 	}
 }

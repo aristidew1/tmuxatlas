@@ -49,10 +49,6 @@ export function resolveOwnerName(
     if (mapped) return mapped
   }
 
-  if (currentRole === 'user' && currentUsername && isAccountHexId(raw)) {
-    return currentUsername
-  }
-
   if (isAccountHexId(raw)) {
     return null
   }

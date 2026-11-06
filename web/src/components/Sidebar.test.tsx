@@ -286,36 +286,4 @@ describe('state-driven Sidebar', () => {
       expect(screen.queryByRole('dialog', { name: 'Sessions de l’espace de travail' })).not.toBeInTheDocument(),
     )
   })
-
-  it('liste aussi les sessions des autres et les sessions libres, sans pouvoir les ouvrir', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response(JSON.stringify([{ id: 'id-bob', username: 'bob' }]))),
-    )
-    const workspace = buildWorkspaceViewModel([], [], new Map(), [
-      { id: 'h', name: 'vps', online: true, local: true } as never,
-    ])
-    renderStrict(
-      <Sidebar
-        workspace={workspace}
-        selectedSession={null}
-        collapsed={false}
-        collapseMode="small"
-        pinnedTargets={[]}
-        recentTargets={[]}
-        onTogglePin={vi.fn()}
-        onSessionSelect={vi.fn()}
-        onDetachSession={vi.fn()}
-        readOnlySessions={[
-          { host: 'h', name: 'projet-bob', owner: 'id-bob' },
-          { host: 'h', name: 'libre', owner: null },
-        ]}
-      />,
-    )
-    const rows = screen.getAllByTestId('sidebar-readonly-session')
-    expect(rows).toHaveLength(2)
-    await waitFor(() => expect(rows[0]).toHaveTextContent('bob'))
-    expect(screen.queryByRole('button', { name: /Ouvrir la session projet-bob/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'M’assigner la session libre' })).toBeInTheDocument()
-  })
 })

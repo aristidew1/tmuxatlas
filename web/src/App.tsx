@@ -20,7 +20,7 @@ import { usePWAInstall, type PWAInstallState } from './hooks/usePWAInstall'
 import { usePreferencesProvider, usePreferences, PreferencesContext } from './hooks/usePreferences'
 import { useVisualViewportVariables } from './hooks/useVisualViewport'
 import { useAuth, type AccountRole, type AuthMode } from './hooks/useAuth'
-import { fetchAdminUsers, resolveOwnerName, type AccountUser } from './lib/accountsApi'
+import { fetchAccountDirectory, resolveOwnerName, type AccountDirectoryEntry } from './lib/accountsApi'
 import { applyTheme } from './theme'
 import { getBrandStorage, setBrandStorage } from './lib/brandStorage'
 import { AccountRoleContext } from './lib/accountContext'
@@ -124,7 +124,7 @@ function AppInner({
     activity,
     rehydrate,
   } = useApplicationState()
-  const [adminUsers, setAdminUsers] = useState<AccountUser[]>([])
+  const [adminUsers, setAdminUsers] = useState<AccountDirectoryEntry[]>([])
   const usersById = useMemo(() => {
     const map = new Map<string, string>()
     for (const user of adminUsers) {
@@ -134,9 +134,9 @@ function AppInner({
   }, [adminUsers])
 
   useEffect(() => {
-    if (role !== 'admin') return
+    if (!role) return
     let cancelled = false
-    fetchAdminUsers()
+    fetchAccountDirectory()
       .then(loaded => {
         if (!cancelled) setAdminUsers(loaded)
       })
@@ -147,13 +147,13 @@ function AppInner({
   }, [role])
 
   useEffect(() => {
-    if (role !== 'admin') return
+    if (!role) return
     const hasUnknownOwner = sessions.some(
       session => Boolean(session.owner) && !usersById.has(session.owner!),
     )
     if (!hasUnknownOwner) return
     let cancelled = false
-    fetchAdminUsers()
+    fetchAccountDirectory()
       .then(loaded => {
         if (!cancelled) setAdminUsers(loaded)
       })
@@ -815,7 +815,6 @@ function AppInner({
         {!terminalFullscreen && !zenMode && (
           <Sidebar
             workspace={workspace}
-            readOnlySessions={role === 'user' ? freeSessions : []}
             selectedSession={selectedSession}
             collapsed={sidebarCollapsed}
             collapseMode={(prefs.sidebar.collapse_mode || 'small') as 'small' | 'hidden'}

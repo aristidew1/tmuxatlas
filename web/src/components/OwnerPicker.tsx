@@ -57,7 +57,6 @@ export function OwnerPicker({ hostId, session, ownerName, testId, className = ''
       </span>
     )
   }
-  if (!ownerName && role !== 'admin') return null
 
   const toggle = (event: MouseEvent) => {
     event.stopPropagation()

@@ -107,7 +107,7 @@ func TestAccountPolicyRejectsRevokedRequestWaitingForLock(t *testing.T) {
 	}
 }
 
-func TestAccountCannotUseAnotherUsersSession(t *testing.T) {
+func TestAnyAccountCanUseAnySession(t *testing.T) {
 	dir, err := os.MkdirTemp("/tmp", "atlas-accounts-")
 	if err != nil {
 		t.Fatal(err)
@@ -169,12 +169,8 @@ func TestAccountCannotUseAnotherUsersSession(t *testing.T) {
 			r.AddCookie(&http.Cookie{Name: "tmuxatlas_session", Value: token})
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, r)
-			want := http.StatusNoContent
-			if name == "bob" {
-				want = http.StatusForbidden
-			}
-			if w.Code != want {
-				t.Errorf("%s %s: %d, want %d", name, operation, w.Code, want)
+			if w.Code != http.StatusNoContent {
+				t.Errorf("%s %s: %d", name, operation, w.Code)
 			}
 		}
 		url := "/ws/session?host=" + peers.LocalID() + "&name=" + name
@@ -182,12 +178,18 @@ func TestAccountCannotUseAnotherUsersSession(t *testing.T) {
 		r.AddCookie(&http.Cookie{Name: "tmuxatlas_session", Value: token})
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, r)
-		want := http.StatusNoContent
-		if name == "bob" {
-			want = http.StatusForbidden
+		if w.Code != http.StatusNoContent {
+			t.Errorf("%s pty: %d", name, w.Code)
 		}
-		if w.Code != want {
-			t.Errorf("%s pty: %d, want %d", name, w.Code, want)
+	}
+	// Atlas's internal session and unknown sessions stay out of reach.
+	for _, name := range []string{"tmuxatlas-ctrl", "inexistante"} {
+		r := httptest.NewRequest(http.MethodGet, "/ws/session?host="+peers.LocalID()+"&name="+name, nil)
+		r.AddCookie(&http.Cookie{Name: "tmuxatlas_session", Value: token})
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != http.StatusForbidden {
+			t.Errorf("%s pty: %d, want 403", name, w.Code)
 		}
 	}
 }

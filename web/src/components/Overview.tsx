@@ -92,48 +92,8 @@ export function Overview({
     }
   }, [prefs.overview_refresh_interval, isNonAdminUser])
 
-  const visibleSessions = isNonAdminUser
-    ? sessions.filter(session => session.owner !== null && session.owner !== '')
-    : sessions
+  const visibleSessions = sessions
 
-  const otherSessions = (freeSessions ?? appState.freeSessions ?? [])
-    .filter(item => item.owner)
-    .sort((left, right) => left.name.localeCompare(right.name) || left.host.localeCompare(right.host))
-  const hasOtherSessions = isNonAdminUser && otherSessions.length > 0
-  const [directory, setDirectory] = useState<Map<string, string>>(new Map())
-  useEffect(() => {
-    if (!hasOtherSessions) return
-    let cancelled = false
-    fetchAccountDirectory()
-      .then(accounts => {
-        if (!cancelled) setDirectory(new Map(accounts.map(account => [account.id, account.username])))
-      })
-      .catch(() => {})
-    return () => {
-      cancelled = true
-    }
-  }, [hasOtherSessions, otherSessions.length])
-
-  const effectiveFreeSessions: FreeSession[] = (() => {
-    if (!isNonAdminUser) return []
-    const byKey = new Map<string, FreeSession>()
-    for (const item of freeSessions ?? appState.freeSessions ?? []) {
-      if (item.owner) continue
-      byKey.set(`${item.host}/${item.name}`, item)
-    }
-    for (const session of sessions) {
-      if (session.owner === null || session.owner === '') {
-        byKey.set(`${session.host}/${session.name}`, {
-          host: session.host,
-          name: session.name,
-          owner: null,
-        })
-      }
-    }
-    return [...byKey.values()].sort(
-      (left, right) => left.name.localeCompare(right.name) || left.host.localeCompare(right.host),
-    )
-  })()
 
   const handleClaim = async (hostId: string, sessionName: string) => {
     const key = `${hostId}/${sessionName}`
@@ -284,58 +244,6 @@ export function Overview({
           </div>
         </section>
       ))}
-      {isNonAdminUser && (
-        <section className="mt-6" aria-labelledby="free-sessions-heading">
-          <h2 id="free-sessions-heading" className="mb-2 text-sm font-medium">
-            Sessions libres <span className="text-xs text-muted-foreground">({effectiveFreeSessions.length})</span>
-          </h2>
-          {effectiveFreeSessions.length === 0 ? (
-            <p className="text-xs text-muted-foreground">Aucune session libre pour le moment.</p>
-          ) : (
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-              {effectiveFreeSessions.map(free => {
-                const key = `${free.host}/${free.name}`
-                return (
-                  <div key={key} className="atlas-surface flex items-center justify-between gap-3 rounded-lg px-4 py-3">
-                    <span className="truncate text-sm font-medium">{free.name}</span>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      loading={pendingTarget === key}
-                      onClick={() => void handleClaim(free.host, free.name)}
-                    >
-                      M'assigner
-                    </Button>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </section>
-      )}
-      {hasOtherSessions && (
-        <section className="mt-6" aria-labelledby="other-sessions-heading">
-          <h2 id="other-sessions-heading" className="mb-2 text-sm font-medium">
-            Sessions des autres <span className="text-xs text-muted-foreground">({otherSessions.length})</span>
-          </h2>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-            {otherSessions.map(other => (
-              <div
-                key={`${other.host}/${other.name}`}
-                data-testid="other-session"
-                className="atlas-surface flex items-center justify-between gap-3 rounded-lg px-3 py-2"
-              >
-                <span className="truncate text-sm font-medium">{other.name}</span>
-                <span className="inline-flex shrink-0 items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-2xs text-secondary-foreground">
-                  <User size={12} aria-hidden="true" />
-                  <span className="max-w-24 truncate">{directory.get(other.owner!) ?? 'Autre compte'}</span>
-                </span>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
     </main>
   )
 }

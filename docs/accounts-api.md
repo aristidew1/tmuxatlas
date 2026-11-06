@@ -65,9 +65,8 @@ réponses d’action réussies ont la forme `{"request_id":"…","result":{…}}
 
 Le rôle `user` peut aussi lire `/api/sessions`, `/api/hosts`,
 `/api/tool-events`, `/api/activity`, `/api/preferences` et son statut, se
-déconnecter et changer son mot de passe. Les opérations sur une session
-attribuée exigent qu’elle lui appartienne. Les vues montrent ses sessions
-complètes, les sessions libres sous la forme `{"host":"…","name":"…","owner":null}`,
-et cachent celles des autres comptes. Les autres routes protégées sont
+déconnecter et changer son mot de passe. Le propriétaire d’une session est une
+simple étiquette : tout compte connecté voit et utilise toutes les sessions,
+et peut en changer le propriétaire ou les libérer. Les autres routes protégées sont
 refusées par défaut, notamment administration, surveillance, statistiques,
 peers, voix, push et écriture des préférences.

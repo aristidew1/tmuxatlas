@@ -46,8 +46,8 @@ describe('OwnerPicker', () => {
     expect(screen.getByTestId('badge')).toHaveTextContent('alice')
   })
 
-  it('n’affiche rien pour une session libre chez un non-admin', () => {
+  it('permet à tout compte de reprendre une session libre', () => {
     show('user', null)
-    expect(screen.queryByTestId('badge')).not.toBeInTheDocument()
+    expect(screen.getByTestId('badge')).toHaveTextContent('Libre')
   })
 })

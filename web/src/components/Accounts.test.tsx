@@ -110,7 +110,6 @@ describe('Résolution du nom du propriétaire et badges', () => {
     const hexId = '0123456789abcdef0123456789abcdef'
     expect(resolveOwnerName(hexId)).toBeNull()
     expect(resolveOwnerName(hexId, { usersById: { [hexId]: 'alice' } })).toBe('alice')
-    expect(resolveOwnerName(hexId, { currentRole: 'user', currentUsername: 'bob' })).toBe('bob')
   })
 
   it('affiche le badge propriétaire sur SessionCard uniquement quand le nom est résolu', () => {
@@ -245,17 +244,8 @@ describe('Tableau de bord /admin', () => {
 })
 
 describe('Vue non-admin : claim, release, erreur 409 et absence de routes interdites', () => {
-  it('n’appelle pas /api/stats, affiche les sessions libres et explique 409 already-owned', async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url.endsWith('/api/session/claim')) {
-        return new Response(JSON.stringify({ code: 'already-owned' }), { status: 409 })
-      }
-      if (url.endsWith('/api/session/release')) {
-        return new Response(JSON.stringify({ request_id: 'r1', result: {} }), { status: 200 })
-      }
-      return new Response('{}', { status: 200 })
-    })
+  it('n’appelle pas /api/stats pour un non-admin et affiche toutes ses sessions', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)
 
     render(
@@ -263,7 +253,6 @@ describe('Vue non-admin : claim, release, erreur 409 et absence de routes interd
         role="user"
         currentUsername="alice"
         sessions={[sampleSession({ name: 'ma-session' })]}
-        freeSessions={[{ host: 'h1', name: 'session-libre' }]}
         hosts={[{ id: 'h1', name: 'Serveur', online: true, sessions: [], last_seen: '' }]}
         onSessionSelect={vi.fn()}
         getSessionEvents={() => []}
@@ -278,14 +267,6 @@ describe('Vue non-admin : claim, release, erreur 409 et absence de routes interd
     expect(fetchMock).not.toHaveBeenCalledWith('/api/stats', expect.anything())
     expect(screen.queryByText(/CPU/)).not.toBeInTheDocument()
     expect(screen.getByText('ma-session')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Libérer' })).toBeInTheDocument()
-    expect(screen.getByText('Sessions libres')).toBeInTheDocument()
-    expect(screen.getByText('session-libre')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: "M'assigner" }))
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Cette session vient d’être attribuée à un autre compte.',
-    )
   })
 
   it('masque Monitoring et Administration pour un utilisateur non-admin et réduit les Réglages', () => {

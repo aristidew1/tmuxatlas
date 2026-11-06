@@ -117,7 +117,10 @@ func (p *accountPolicy) closeForChange(w http.ResponseWriter) bool {
 	return false
 }
 
-func (p *accountPolicy) owns(host, name, pane, account string) bool {
+// owns reports whether an account may use a session. Ownership is a label, so
+// any account may use any existing session except Atlas's internal one; the
+// pane must still belong to that session.
+func (p *accountPolicy) owns(host, name, pane, _ string) bool {
 	if p.opts.PeerMgr == nil || host == "" || name == "" || name == "tmuxatlas-ctrl" {
 		return false
 	}
@@ -132,7 +135,7 @@ func (p *accountPolicy) owns(host, name, pane, account string) bool {
 			return false
 		}
 		for _, session := range current {
-			if session.Name == name && string(session.Owner) == account {
+			if session.Name == name {
 				if pane == "" {
 					return true
 				}
@@ -141,8 +144,7 @@ func (p *accountPolicy) owns(host, name, pane, account string) bool {
 			}
 		}
 	} else {
-		owner, ok := p.remoteOwner(host, name)
-		if !ok || string(owner) != account {
+		if _, ok := p.remoteOwner(host, name); !ok {
 			return false
 		}
 		for _, h := range p.opts.PeerMgr.StateHostSnapshots() {
@@ -155,9 +157,6 @@ func (p *accountPolicy) owns(host, name, pane, account string) bool {
 	for _, session := range sessions {
 		if session == nil || session.Name != name {
 			continue
-		}
-		if p.opts.PeerMgr.IsLocal(host) && string(session.Owner) != account {
-			return false
 		}
 		if pane == "" {
 			return true
@@ -301,11 +300,11 @@ func (p *accountPolicy) watchOwnership(ctx context.Context) {
 			if connection.session == "" {
 				continue
 			}
-			owner, exists := current[state.NewSessionKey(connection.host, connection.session)]
+			_, exists := current[state.NewSessionKey(connection.host, connection.session)]
 			if !p.opts.PeerMgr.IsLocal(connection.host) {
-				owner, exists = p.remoteOwner(connection.host, connection.session)
+				_, exists = p.remoteOwner(connection.host, connection.session)
 			}
-			if !exists || string(owner) != connection.accountID {
+			if !exists {
 				connection.cancel()
 			}
 		}

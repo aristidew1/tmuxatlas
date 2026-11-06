@@ -604,7 +604,7 @@ function AppInner({
       'navigation.overview': () => navigateTo(null),
       'navigation.settings': navigateToSettings,
       'navigation.monitoring': () => {
-        if (role !== 'user') navigateTo(null, 'monitoring')
+        navigateTo(null, 'monitoring')
       },
       'navigation.wall': () => navigateTo(null, 'wall'),
       ...(role === 'admin' ? { 'navigation.admin': () => navigateTo(null, 'admin') } : {}),
@@ -869,7 +869,7 @@ function AppInner({
                 role={role}
                 pwaInstall={pwaInstall}
               />
-            ) : currentView === 'monitoring' && role !== 'user' ? (
+            ) : currentView === 'monitoring' ? (
               <MonitoringPage hosts={hosts} />
             ) : currentView === 'wall' ? (
               <WallView workspace={workspace} onOpenSession={(key: string) => void jumpToSession(key)} />

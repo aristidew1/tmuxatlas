@@ -104,6 +104,19 @@ export function translateAccountServerError(raw: string, fallback: string): stri
   return text || fallback
 }
 
+export interface AccountDirectoryEntry {
+  id: string
+  username: string
+}
+
+export async function fetchAccountDirectory(): Promise<AccountDirectoryEntry[]> {
+  const res = await apiFetch('/api/accounts/directory')
+  if (!res.ok) {
+    throw new Error(await parseErrorMessage(res, 'Impossible de charger les comptes.'))
+  }
+  return (await res.json()) as AccountDirectoryEntry[]
+}
+
 export async function fetchAdminUsers(): Promise<AccountUser[]> {
   const res = await apiFetch('/api/admin/users')
   if (!res.ok) {

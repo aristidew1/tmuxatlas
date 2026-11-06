@@ -185,6 +185,15 @@ func handleAccountOwnership(w http.ResponseWriter, r *http.Request, opts *Option
 	owner := identity.User.ID
 	ownerName := identity.User.Username
 	force := identity.User.Role == "admin"
+	// An owner may hand their own session to another account. The policy mutex,
+	// held for this whole handler, keeps the check and the change atomic in Atlas.
+	if !force && operation == "claim" && request.Owner != "" {
+		if !policy.owns(request.HostID, request.Session, "", identity.User.ID) {
+			http.Error(w, "accès interdit", http.StatusForbidden)
+			return
+		}
+		force = true
+	}
 	if force && request.Owner != "" {
 		owner = request.Owner
 		if operation == "claim" {
@@ -231,4 +240,26 @@ func handleAccountOwnership(w http.ResponseWriter, r *http.Request, opts *Option
 	}
 	refreshLocalSessionState(opts, request.HostID)
 	writeActionResponse(w, result)
+}
+
+// handleAccountDirectory lists the active accounts a session can be given to.
+// It exposes names only: no role, date, hash or disabled account.
+func handleAccountDirectory(w http.ResponseWriter, opts *Options) {
+	users, err := opts.AccountsAuth.Store.List()
+	if err != nil {
+		writeAccountError(w, err)
+		return
+	}
+	type entry struct {
+		ID       string `json:"id"`
+		Username string `json:"username"`
+	}
+	directory := make([]entry, 0, len(users))
+	for _, user := range users {
+		if !user.Disabled {
+			directory = append(directory, entry{ID: user.ID, Username: user.Username})
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(directory)
 }

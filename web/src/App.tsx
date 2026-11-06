@@ -23,6 +23,7 @@ import { useAuth, type AccountRole, type AuthMode } from './hooks/useAuth'
 import { fetchAdminUsers, resolveOwnerName, type AccountUser } from './lib/accountsApi'
 import { applyTheme } from './theme'
 import { getBrandStorage, setBrandStorage } from './lib/brandStorage'
+import { AccountRoleContext } from './lib/accountContext'
 import { isEditingOutsideTerminal } from './lib/focusGuard'
 import { postRuntimeMutation } from './lib/runtimeApi'
 import { ApplicationStateProvider, useApplicationState } from './state/provider'
@@ -739,6 +740,7 @@ function AppInner({
   }
 
   return (
+    <AccountRoleContext.Provider value={role}>
     <div className="app-shell flex flex-col bg-background text-foreground">
       {(!zenMode ||
         applicationState.connection === 'auth-required' ||
@@ -980,6 +982,7 @@ function AppInner({
         />
       )}
     </div>
+    </AccountRoleContext.Provider>
   )
 }
 

@@ -493,6 +493,7 @@ export function Terminal({
           onOpenAlerts={onOpenAlerts}
           sessionName={sessionName}
           ownerName={ownerName}
+          hostId={hostId}
           windowLabel={windowLabel}
           paneLabel={paneLabel}
           toolStatus={toolStatus}

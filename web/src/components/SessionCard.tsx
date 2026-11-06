@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { User } from 'lucide-react'
+import { OwnerPicker } from './OwnerPicker'
 import type { Session } from '../hooks/useSessions'
 import type { ToolEvent } from '../hooks/useToolEvents'
 import type { ActivitySnapshot } from '../hooks/useActivity'
@@ -89,19 +89,10 @@ export function SessionCard({
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <span className="truncate text-sm font-medium">{session.name}</span>
-          {resolvedOwner && (
-            <span
-              data-testid="session-owner-badge"
-              className="inline-flex shrink-0 items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-2xs text-muted-foreground"
-            >
-              <User size={12} aria-hidden="true" />
-              <span>{resolvedOwner}</span>
-            </span>
-          )}
         </div>
         <StatusPill status={status}>{workspaceStatusLabel(status)}</StatusPill>
       </div>
-      <div className="mt-2 truncate text-xs text-muted-foreground">{metadata.join(' · ')}</div>
+      <div className="mt-2 truncate pr-24 text-xs text-muted-foreground">{metadata.join(' · ')}</div>
       <div
         className="mt-3 flex h-[4lh] items-end overflow-hidden font-mono text-2xs text-muted-foreground"
         style={{ maskImage: 'linear-gradient(to bottom, transparent, black 30%)' }}
@@ -132,16 +123,18 @@ export function SessionCard({
     return (
       <div
         data-tone={status === 'error' || status === 'waiting' ? status : undefined}
-        className="atlas-surface flex h-full w-full flex-col justify-between rounded-lg p-4 transition-colors hover:bg-secondary/50"
+        className="atlas-surface relative flex h-full w-full flex-col justify-between rounded-lg p-4 transition-colors hover:bg-secondary/50"
       >
-        <button
-          ref={ref}
-          type="button"
-          onClick={onSelect}
-          className="ui-focus-ring flex w-full items-start text-left"
-        >
+        <button ref={ref} type="button" onClick={onSelect} className="ui-focus-ring flex w-full items-start text-left">
           {cardBody}
         </button>
+        <OwnerPicker
+          hostId={session.host}
+          session={session.name}
+          ownerName={resolvedOwner}
+          testId="session-owner-badge"
+          className="absolute right-4 top-11"
+        />
         <div className="mt-3 flex justify-end border-t border-border/60 pt-2">
           <Button type="button" variant="secondary" size="sm" onClick={onRelease}>
             Libérer
@@ -152,14 +145,23 @@ export function SessionCard({
   }
 
   return (
-    <button
-      ref={ref}
-      type="button"
-      onClick={onSelect}
-      data-tone={status === 'error' || status === 'waiting' ? status : undefined}
-      className="atlas-surface ui-focus-ring flex h-full w-full items-start rounded-lg p-4 text-left transition-colors hover:bg-secondary/50"
-    >
-      {cardBody}
-    </button>
+    <div className="relative h-full">
+      <button
+        ref={ref}
+        type="button"
+        onClick={onSelect}
+        data-tone={status === 'error' || status === 'waiting' ? status : undefined}
+        className="atlas-surface ui-focus-ring flex h-full w-full items-start rounded-lg p-4 text-left transition-colors hover:bg-secondary/50"
+      >
+        {cardBody}
+      </button>
+      <OwnerPicker
+        hostId={session.host}
+        session={session.name}
+        ownerName={resolvedOwner}
+        testId="session-owner-badge"
+        className="absolute right-4 top-11"
+      />
+    </div>
   )
 }

@@ -404,6 +404,9 @@ func Run(ctx context.Context, opts *Options) error {
 				mutations = r.With(originMiddleware, auth.CSRFMiddleware(opts.SessionMgr))
 				mutations.With(httpguard.BodyReadDeadline(10*time.Second), httpguard.JSONBody(httpguard.SmallJSONLimit)).
 					Post("/auth/change-password", opts.AccountsAuth.ChangePassword)
+				r.Get("/accounts/directory", func(w http.ResponseWriter, r *http.Request) {
+					handleAccountDirectory(w, opts)
+				})
 				r.With(accountAdminOnly).Get("/admin/users", func(w http.ResponseWriter, r *http.Request) {
 					handleAdminUsers(w, r, opts)
 				})

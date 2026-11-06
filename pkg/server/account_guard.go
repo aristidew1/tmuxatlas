@@ -16,7 +16,7 @@ import (
 )
 
 var accountUserRoutes = map[string]bool{
-	"GET /api/preferences": true, "POST /api/auth/change-password": true,
+	"GET /api/preferences": true, "POST /api/auth/change-password": true, "GET /api/accounts/directory": true,
 	"GET /api/sessions": true, "GET /api/hosts": true, "GET /api/tool-events": true,
 	"GET /api/activity": true, "GET /api/session/directories": true,
 	"POST /api/session/new": true, "POST /api/session/claim": true, "POST /api/session/release": true,

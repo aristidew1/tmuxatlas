@@ -27,8 +27,13 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func TestOwnerNameIsMarkedInTmuxSession(t *testing.T)     { runAccountsIntegration(t, "owner-name") }
-func TestNewAccountCanCreateFirstSession(t *testing.T)    { runAccountsIntegration(t, "first-session") }
+func TestOwnerNameIsMarkedInTmuxSession(t *testing.T)  { runAccountsIntegration(t, "owner-name") }
+func TestNewAccountCanCreateFirstSession(t *testing.T) { runAccountsIntegration(t, "first-session") }
+func TestOwnerCanTransferOwnSession(t *testing.T)      { runAccountsIntegration(t, "transfer") }
+func TestUserCannotTransferSomeoneElsesSession(t *testing.T) {
+	runAccountsIntegration(t, "transfer-denied")
+}
+func TestAccountDirectoryExposesOnlyNames(t *testing.T)   { runAccountsIntegration(t, "directory") }
 func TestAccountsModeIntegration(t *testing.T)            { runAccountsIntegration(t, "standard") }
 func TestFailedClaimDoesNotDisconnectOthers(t *testing.T) { runAccountsIntegration(t, "claim") }
 func TestPreferencesHideOtherUsersData(t *testing.T)      { runAccountsIntegration(t, "preferences") }
@@ -185,6 +190,59 @@ func runAccountsIntegration(t *testing.T, scenario string) {
 	adminLogin := loginAs(admin.Username)
 	aliceLogin := loginAs(alice.Username)
 	bobLogin := loginAs(bob.Username)
+	if scenario == "directory" {
+		listed := call(http.MethodGet, "/api/accounts/directory", "", aliceLogin)
+		defer listed.Body.Close()
+		data, _ := io.ReadAll(listed.Body)
+		if listed.StatusCode != http.StatusOK || !strings.Contains(string(data), `"bob"`) {
+			t.Fatalf("annuaire : %s %s", listed.Status, data)
+		}
+		for _, forbidden := range []string{"role", "hash", "password", "disabled", "created"} {
+			if strings.Contains(string(data), forbidden) {
+				t.Fatalf("annuaire expose %q : %s", forbidden, data)
+			}
+		}
+		return
+	}
+	if scenario == "transfer" || scenario == "transfer-denied" {
+		ownerOf := func(session string) string {
+			t.Helper()
+			got, _ := client.Exec("show-options", "-v", "-t", tmux.ExactWindow(session, ""), "@atlas-owner-name")
+			return strings.TrimSpace(got)
+		}
+		give := func(session, owner string, from login) int {
+			t.Helper()
+			body := fmt.Sprintf(`{"host_id":%q,"session":%q,"owner":%q}`, peerManager.LocalID(), session, owner)
+			response := call(http.MethodPost, "/api/session/claim", body, from)
+			response.Body.Close()
+			return response.StatusCode
+		}
+		if scenario == "transfer" {
+			if code := give("alice-work", bob.ID, aliceLogin); code != http.StatusOK {
+				t.Fatalf("transfert : %d", code)
+			}
+			if got := ownerOf("alice-work"); got != "bob" {
+				t.Fatalf("propriétaire : %q", got)
+			}
+			if code := give("alice-work", alice.ID, aliceLogin); code != http.StatusForbidden {
+				t.Fatalf("reprise après transfert : %d", code)
+			}
+			return
+		}
+		if code := give("alice-work", bob.ID, bobLogin); code != http.StatusForbidden {
+			t.Fatalf("session d'autrui : %d", code)
+		}
+		if code := give("still-free", bob.ID, aliceLogin); code != http.StatusForbidden {
+			t.Fatalf("session libre donnée à un tiers : %d", code)
+		}
+		if code := give("alice-work", "compte-inexistant", aliceLogin); code == http.StatusOK {
+			t.Fatal("transfert vers un compte inexistant accepté")
+		}
+		if got := ownerOf("alice-work"); got == "bob" {
+			t.Fatalf("propriétaire modifié : %q", got)
+		}
+		return
+	}
 	if scenario == "first-session" {
 		if _, err := store.Create("carol", string(hash), "user"); err != nil {
 			t.Fatal(err)

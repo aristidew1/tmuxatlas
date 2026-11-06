@@ -39,3 +39,21 @@ func TestAccountProjectionAfterReassignment(t *testing.T) {
 	check("bob", false)
 	check("", false)
 }
+
+func TestNewAccountSeesOnlyOnlineHostsWithIdentityFields(t *testing.T) {
+	p := NewProjection()
+	p.Hosts[NewHostKey("online")] = Host{ID: "online", DisplayName: "vps", Online: true, Version: "secret-version"}
+	p.Hosts[NewHostKey("offline")] = Host{ID: "offline", DisplayName: "off"}
+	view := p.ForAccount("neuf")
+	host, visible := view.Hosts[NewHostKey("online")]
+	if !visible || host.DisplayName != "vps" || len(view.Hosts) != 1 {
+		t.Fatalf("hôtes visibles : %+v", view.Hosts)
+	}
+	if host.Version != "" {
+		t.Fatalf("version d'hôte exposée : %s", host.Version)
+	}
+	views := p.AccountHostViews("neuf")
+	if len(views) != 1 || views[0]["id"] != "online" {
+		t.Fatalf("vues : %v", views)
+	}
+}

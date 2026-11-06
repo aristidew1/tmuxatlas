@@ -48,4 +48,10 @@ describe('Nouvelle session', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Créer' }))
     expect(create).toHaveBeenCalledWith('travail', 'b', { cwd: '/tmp/libre' })
   })
+
+  it('explique pourquoi aucune session ne peut être créée sans hôte', () => {
+    render(<NewSessionModal hosts={[]} onCreateSession={vi.fn()} onClose={vi.fn()} />)
+    expect(screen.getByRole('alert')).toHaveTextContent('Aucun hôte')
+    expect(screen.getByRole('button', { name: 'Créer' })).toBeDisabled()
+  })
 })

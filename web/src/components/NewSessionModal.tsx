@@ -78,6 +78,11 @@ export function NewSessionModal({ hosts, onCreateSession, onClose }: NewSessionM
         </>
       }
     >
+      {onlineHosts.length === 0 && (
+        <p role="alert" className="mb-3 text-xs text-warning">
+          Aucun hôte n’est disponible pour le moment : impossible de créer une session.
+        </p>
+      )}
       <div
         className="space-y-4"
         onKeyDown={event => {

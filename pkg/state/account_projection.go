@@ -24,6 +24,10 @@ type freeSession struct {
 	Owner tmux.Owner `json:"owner"`
 }
 
+func minimalHost(host Host) Host {
+	return Host{Key: host.Key, ID: host.ID, DisplayName: host.DisplayName, Online: host.Online, Local: host.Local}
+}
+
 // ForAccount builds a fresh projection without retaining references to data
 // belonging to other accounts. An empty account ID never owns a session.
 func (p Projection) ForAccount(accountID string) AccountProjection {
@@ -32,6 +36,13 @@ func (p Projection) ForAccount(accountID string) AccountProjection {
 		Windows: make(map[WindowKey]Window), Panes: make(map[PaneKey]Pane),
 		ToolEvents: make(map[ToolEventKey]ToolEvent), Activity: make(map[ActivityKey]Activity),
 		Health: make(map[HostKey]Health),
+	}
+	// A new account owns nothing yet but must be able to pick a host for its
+	// first session, so online hosts are visible with identity fields only.
+	for key, host := range p.Hosts {
+		if host.Online {
+			result.Hosts[key] = minimalHost(host)
+		}
 	}
 	owned := make(map[SessionKey]bool)
 	for key, session := range p.Sessions {
@@ -44,7 +55,7 @@ func (p Projection) ForAccount(accountID string) AccountProjection {
 			result.Sessions[key] = session
 			owned[key] = true
 			if host, ok := p.Hosts[session.HostKey]; ok {
-				result.Hosts[session.HostKey] = Host{Key: host.Key, ID: host.ID, DisplayName: host.DisplayName, Online: host.Online, Local: host.Local}
+				result.Hosts[session.HostKey] = minimalHost(host)
 			}
 		}
 	}
@@ -81,6 +92,11 @@ func (p Projection) AccountHostViews(accountID string) []map[string]any {
 			grouped[session.Host] = append(grouped[session.Host], session)
 		case freeSession:
 			grouped[session.Host] = append(grouped[session.Host], session)
+		}
+	}
+	for _, host := range p.Hosts {
+		if _, known := grouped[host.ID]; host.Online && !known {
+			grouped[host.ID] = []any{}
 		}
 	}
 	ids := make([]string, 0, len(grouped))

@@ -28,6 +28,7 @@ import (
 )
 
 func TestOwnerNameIsMarkedInTmuxSession(t *testing.T)     { runAccountsIntegration(t, "owner-name") }
+func TestNewAccountCanCreateFirstSession(t *testing.T)    { runAccountsIntegration(t, "first-session") }
 func TestAccountsModeIntegration(t *testing.T)            { runAccountsIntegration(t, "standard") }
 func TestFailedClaimDoesNotDisconnectOthers(t *testing.T) { runAccountsIntegration(t, "claim") }
 func TestPreferencesHideOtherUsersData(t *testing.T)      { runAccountsIntegration(t, "preferences") }
@@ -184,6 +185,48 @@ func runAccountsIntegration(t *testing.T, scenario string) {
 	adminLogin := loginAs(admin.Username)
 	aliceLogin := loginAs(alice.Username)
 	bobLogin := loginAs(bob.Username)
+	if scenario == "first-session" {
+		if _, err := store.Create("carol", string(hash), "user"); err != nil {
+			t.Fatal(err)
+		}
+		carol := loginAs("carol")
+		response := call(http.MethodGet, "/api/hosts", "", carol)
+		defer response.Body.Close()
+		var hosts []map[string]any
+		if err := json.NewDecoder(response.Body).Decode(&hosts); err != nil {
+			t.Fatal(err)
+		}
+		if len(hosts) != 1 || hosts[0]["id"] != peerManager.LocalID() {
+			t.Fatalf("hôtes visibles par un compte neuf : %v", hosts)
+		}
+		if _, exposed := hosts[0]["stats"]; exposed {
+			t.Fatalf("statistiques exposées : %v", hosts[0])
+		}
+		target := fmt.Sprintf(`{"host_id":%q,"session":"carol-first"}`, peerManager.LocalID())
+		created := call(http.MethodPost, "/api/session/new", target, carol)
+		defer created.Body.Close()
+		if created.StatusCode != http.StatusOK {
+			data, _ := io.ReadAll(created.Body)
+			t.Fatalf("création : %s %s", created.Status, data)
+		}
+		sessionsOf := func(user login) string {
+			t.Helper()
+			listed := call(http.MethodGet, "/api/sessions", "", user)
+			defer listed.Body.Close()
+			data, _ := io.ReadAll(listed.Body)
+			return string(data)
+		}
+		for deadline := time.Now().Add(3 * time.Second); !strings.Contains(sessionsOf(carol), "carol-first"); {
+			if time.Now().After(deadline) {
+				t.Fatal("la session créée n'apparaît pas pour son propriétaire")
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		if strings.Contains(sessionsOf(bobLogin), "carol-first") {
+			t.Fatal("la session de carol est visible par bob")
+		}
+		return
+	}
 	if scenario == "owner-name" {
 		check := func(session, want string) {
 			t.Helper()

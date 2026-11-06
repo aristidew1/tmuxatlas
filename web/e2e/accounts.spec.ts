@@ -177,12 +177,15 @@ test('mode accounts : parcours complet admin, alice et bob, isolation, attributi
   await bobPage.getByRole('button', { name: 'Se connecter' }).click()
 
   await expect(bobPage.getByText('Sessions libres')).toBeVisible()
-  await expect(bobPage.getByText('alice-session')).toHaveCount(0)
+  // Bob voit à qui appartient la session d'Alice, sans pouvoir l'ouvrir.
+  const aliceCard = bobPage.getByTestId('other-session').filter({ hasText: 'alice-session' })
+  await expect(aliceCard).toContainText('alice')
+  await expect(aliceCard.getByRole('button')).toHaveCount(0)
 
   // Accès direct par URL refusé / redirigé proprement vers /
   await bobPage.goto(aliceSessionUrl)
   await expect(bobPage).toHaveURL(`${baseURL}/`)
-  await expect(bobPage.getByText('alice-session')).toHaveCount(0)
+  await expect(aliceCard).toBeVisible()
 
   // Bob s'assigne la session libre free-session
   await expect(bobPage.getByText('free-session')).toBeVisible()

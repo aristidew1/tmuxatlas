@@ -66,7 +66,7 @@ export function selectFreeSessions(state: ApplicationState): FreeSession[] {
       result.push({
         host: source.host,
         name: source.name,
-        owner: null,
+        owner: source.owner ?? null,
       })
     }
   }

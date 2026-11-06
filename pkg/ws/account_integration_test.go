@@ -88,7 +88,7 @@ func TestAccountProjectionNeverLeaksAfterReassign(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(after), `"type":"snapshot"`) || strings.Contains(string(after), "secret-") {
+	if !strings.Contains(string(after), `"type":"snapshot"`) || strings.Contains(string(after), "secret-window") || strings.Contains(string(after), "secret-command") {
 		t.Fatalf("projection après réattribution : %s", after)
 	}
 }

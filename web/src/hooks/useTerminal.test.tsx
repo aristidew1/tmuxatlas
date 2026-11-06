@@ -1,8 +1,13 @@
 import { act, renderHook } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MobileTerminalInput } from '../lib/mobileTerminalInput'
 import { terminalTargetKey } from '../lib/terminalInput'
 import { useTerminal } from './useTerminal'
+
+// React schedules its last work on a macrotask: let it run before the DOM environment is torn down.
+afterAll(async () => {
+  await new Promise(resolve => setTimeout(resolve, 20))
+})
 
 const xtermState = vi.hoisted(() => ({
   terminals: [] as any[],

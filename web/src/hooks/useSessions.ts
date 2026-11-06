@@ -38,7 +38,7 @@ export interface Session {
 export interface FreeSession {
   host: string
   name: string
-  owner?: null
+  owner?: string | null
 }
 
 // Unique key for a session across hosts

@@ -57,6 +57,9 @@ func (p Projection) ForAccount(accountID string) AccountProjection {
 			if host, ok := p.Hosts[session.HostKey]; ok {
 				result.Hosts[session.HostKey] = minimalHost(host)
 			}
+		} else {
+			// Everyone may see who owns what: name and owner only, no details.
+			result.Sessions[key] = freeSession{Host: session.HostID, Name: session.Name, Owner: session.Owner}
 		}
 	}
 	for key, window := range p.Windows {
@@ -141,14 +144,14 @@ func (p Projection) AccountSessionViews(accountID string) []any {
 	}
 	keys := make([]SessionKey, 0)
 	for key, session := range p.Sessions {
-		if session.Name != "tmuxatlas-ctrl" && session.Owner == "" {
+		if session.Name != "tmuxatlas-ctrl" && (session.Owner == "" || string(session.Owner) != accountID) {
 			keys = append(keys, key)
 		}
 	}
 	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
 	for _, key := range keys {
 		session := p.Sessions[key]
-		views = append(views, freeSession{Host: session.HostID, Name: session.Name})
+		views = append(views, freeSession{Host: session.HostID, Name: session.Name, Owner: session.Owner})
 	}
 	return views
 }

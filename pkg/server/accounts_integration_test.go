@@ -280,8 +280,22 @@ func runAccountsIntegration(t *testing.T, scenario string) {
 			}
 			time.Sleep(50 * time.Millisecond)
 		}
-		if strings.Contains(sessionsOf(bobLogin), "carol-first") {
-			t.Fatal("la session de carol est visible par bob")
+		var seen []map[string]any
+		if err := json.Unmarshal([]byte(sessionsOf(bobLogin)), &seen); err != nil {
+			t.Fatal(err)
+		}
+		foreign := false
+		for _, session := range seen {
+			if session["name"] != "carol-first" {
+				continue
+			}
+			foreign = true
+			if len(session) != 3 || session["owner"] == nil {
+				t.Fatalf("bob ne doit voir que le nom et le propriétaire : %v", session)
+			}
+		}
+		if !foreign {
+			t.Fatal("bob doit voir la session de carol et son propriétaire")
 		}
 		return
 	}
@@ -460,8 +474,17 @@ func runAccountsIntegration(t *testing.T, scenario string) {
 	response = call(http.MethodGet, "/api/sessions", "", bobLogin)
 	data, _ := io.ReadAll(response.Body)
 	response.Body.Close()
-	if response.StatusCode != http.StatusOK || bytes.Contains(data, []byte("alice-work")) || bytes.Contains(data, []byte("free-work")) || !bytes.Contains(data, []byte("bob-work")) || !bytes.Contains(data, []byte("still-free")) {
+	if response.StatusCode != http.StatusOK || !bytes.Contains(data, []byte("bob-work")) || !bytes.Contains(data, []byte("still-free")) {
 		t.Fatalf("projection bob : %d %s", response.StatusCode, data)
+	}
+	var visible []map[string]any
+	if err := json.Unmarshal(data, &visible); err != nil {
+		t.Fatal(err)
+	}
+	for _, session := range visible {
+		if name := session["name"]; (name == "alice-work" || name == "free-work") && len(session) != 3 {
+			t.Fatalf("détails exposés à bob : %v", session)
+		}
 	}
 	response = call(http.MethodGet, "/ws/session?host="+peerManager.LocalID()+"&name=free-work", "", bobLogin)
 	response.Body.Close()

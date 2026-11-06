@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, TriangleAlert } from 'lucide-react'
+import { Plus, TriangleAlert, User } from 'lucide-react'
 import type { FreeSession, Session } from '../hooks/useSessions'
 import { sessionKey } from '../hooks/useSessions'
 import type { Host } from '../hooks/useHosts'
@@ -7,7 +7,7 @@ import type { ToolEvent } from '../hooks/useToolEvents'
 import type { ActivitySnapshot } from '../hooks/useActivity'
 import type { AccountRole } from '../hooks/useAuth'
 import { usePreferences } from '../hooks/usePreferences'
-import { claimSession, releaseSession, resolveOwnerName } from '../lib/accountsApi'
+import { claimSession, fetchAccountDirectory, releaseSession, resolveOwnerName } from '../lib/accountsApi'
 import { useHostLabel } from '../lib/hostLabel'
 import { useApplicationState } from '../state/provider'
 import { Inbox } from './Inbox'
@@ -96,10 +96,29 @@ export function Overview({
     ? sessions.filter(session => session.owner !== null && session.owner !== '')
     : sessions
 
+  const otherSessions = (freeSessions ?? appState.freeSessions ?? [])
+    .filter(item => item.owner)
+    .sort((left, right) => left.name.localeCompare(right.name) || left.host.localeCompare(right.host))
+  const hasOtherSessions = isNonAdminUser && otherSessions.length > 0
+  const [directory, setDirectory] = useState<Map<string, string>>(new Map())
+  useEffect(() => {
+    if (!hasOtherSessions) return
+    let cancelled = false
+    fetchAccountDirectory()
+      .then(accounts => {
+        if (!cancelled) setDirectory(new Map(accounts.map(account => [account.id, account.username])))
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [hasOtherSessions, otherSessions.length])
+
   const effectiveFreeSessions: FreeSession[] = (() => {
     if (!isNonAdminUser) return []
     const byKey = new Map<string, FreeSession>()
     for (const item of freeSessions ?? appState.freeSessions ?? []) {
+      if (item.owner) continue
       byKey.set(`${item.host}/${item.name}`, item)
     }
     for (const session of sessions) {
@@ -127,9 +146,7 @@ export function Overview({
         await claimSession(hostId, sessionName)
       }
     } catch (err) {
-      setOwnershipError(
-        err instanceof Error ? err.message : 'Impossible d’attribuer cette session.',
-      )
+      setOwnershipError(err instanceof Error ? err.message : 'Impossible d’attribuer cette session.')
     } finally {
       setPendingTarget(null)
     }
@@ -146,9 +163,7 @@ export function Overview({
         await releaseSession(hostId, sessionName)
       }
     } catch (err) {
-      setOwnershipError(
-        err instanceof Error ? err.message : 'Impossible de libérer cette session.',
-      )
+      setOwnershipError(err instanceof Error ? err.message : 'Impossible de libérer cette session.')
     } finally {
       setPendingTarget(null)
     }
@@ -236,9 +251,7 @@ export function Overview({
           Santé d’un hôte dégradée : {healthReasons[reason]} · Voir le monitoring
         </button>
       )}
-      {visibleSessions.length === 0 && (
-        <p className="text-muted-foreground">Aucune session disponible.</p>
-      )}
+      {visibleSessions.length === 0 && <p className="text-muted-foreground">Aucune session disponible.</p>}
       {[...groups].map(([id, group]) => (
         <section key={id} className="mb-6">
           <h2 className="mb-2 text-sm font-medium" title={id}>
@@ -264,11 +277,7 @@ export function Overview({
                   sparklines={!!prefs.sparklines_visible}
                   ownerName={ownerName}
                   onSelect={() => onSessionSelect(session)}
-                  onRelease={
-                    isNonAdminUser
-                      ? () => void handleRelease(session.host, session.name)
-                      : undefined
-                  }
+                  onRelease={isNonAdminUser ? () => void handleRelease(session.host, session.name) : undefined}
                 />
               )
             })}
@@ -278,8 +287,7 @@ export function Overview({
       {isNonAdminUser && (
         <section className="mt-6" aria-labelledby="free-sessions-heading">
           <h2 id="free-sessions-heading" className="mb-2 text-sm font-medium">
-            Sessions libres{' '}
-            <span className="text-xs text-muted-foreground">({effectiveFreeSessions.length})</span>
+            Sessions libres <span className="text-xs text-muted-foreground">({effectiveFreeSessions.length})</span>
           </h2>
           {effectiveFreeSessions.length === 0 ? (
             <p className="text-xs text-muted-foreground">Aucune session libre pour le moment.</p>
@@ -288,10 +296,7 @@ export function Overview({
               {effectiveFreeSessions.map(free => {
                 const key = `${free.host}/${free.name}`
                 return (
-                  <div
-                    key={key}
-                    className="atlas-surface flex items-center justify-between gap-3 rounded-lg px-4 py-3"
-                  >
+                  <div key={key} className="atlas-surface flex items-center justify-between gap-3 rounded-lg px-4 py-3">
                     <span className="truncate text-sm font-medium">{free.name}</span>
                     <Button
                       type="button"
@@ -307,6 +312,28 @@ export function Overview({
               })}
             </div>
           )}
+        </section>
+      )}
+      {hasOtherSessions && (
+        <section className="mt-6" aria-labelledby="other-sessions-heading">
+          <h2 id="other-sessions-heading" className="mb-2 text-sm font-medium">
+            Sessions des autres <span className="text-xs text-muted-foreground">({otherSessions.length})</span>
+          </h2>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {otherSessions.map(other => (
+              <div
+                key={`${other.host}/${other.name}`}
+                data-testid="other-session"
+                className="atlas-surface flex items-center justify-between gap-3 rounded-lg px-3 py-2"
+              >
+                <span className="truncate text-sm font-medium">{other.name}</span>
+                <span className="inline-flex shrink-0 items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-2xs text-secondary-foreground">
+                  <User size={12} aria-hidden="true" />
+                  <span className="max-w-24 truncate">{directory.get(other.owner!) ?? 'Autre compte'}</span>
+                </span>
+              </div>
+            ))}
+          </div>
         </section>
       )}
     </main>

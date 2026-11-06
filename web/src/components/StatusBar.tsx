@@ -9,9 +9,12 @@ interface StatusBarProps {
   hosts: Host[]
   agentCount: number
   onHelp?: () => void
+  /** Starts the slot under the Terminal, past the expanded Sidebar. */
+  alignSlotToTerminal?: boolean
+  onSlotChange?: (slot: HTMLElement | null) => void
 }
 
-export function StatusBar({ sessionCount, waitingCount, pushState, version, updateAvailable, hosts, agentCount, onHelp }: StatusBarProps) {
+export function StatusBar({ sessionCount, waitingCount, pushState, version, updateAvailable, hosts, agentCount, onHelp, alignSlotToTerminal, onSlotChange }: StatusBarProps) {
   const peersConnected = hosts.filter(h => !h.local && h.online).length
   const peersConfigured = hosts.filter(h => !h.local).length
   const hostCount = hosts.filter(h => h.online).length
@@ -19,6 +22,7 @@ export function StatusBar({ sessionCount, waitingCount, pushState, version, upda
   return (
     <footer className="flex shrink-0 items-center justify-between gap-2 overflow-hidden border-t border-border bg-card px-2 pt-1 pb-[max(.25rem,var(--safe-area-inset-bottom))] font-mono text-xs font-bold text-muted-foreground sm:gap-4 sm:px-4">
       <div className="flex min-w-0 items-center gap-2 sm:gap-4">
+        <div className={`flex min-w-0 items-center gap-2 sm:gap-4 ${alignSlotToTerminal ? 'lg:min-w-[14rem]' : ''}`}>
         {peersConfigured > 0 && (
           <span className="hidden sm:inline">PEERS: <span className={peersConnected === peersConfigured ? 'text-foreground' : 'text-warning'}>{peersConnected}/{peersConfigured}</span></span>
         )}
@@ -30,6 +34,8 @@ export function StatusBar({ sessionCount, waitingCount, pushState, version, upda
         {waitingCount > 0 && (
           <span className="whitespace-nowrap text-warning">WAITING: {waitingCount}</span>
         )}
+        </div>
+        <div ref={onSlotChange} className="flex shrink-0 items-center empty:hidden" />
       </div>
       <div className="flex shrink-0 items-center gap-2 sm:gap-4">
         {pushState !== 'unsupported' && (

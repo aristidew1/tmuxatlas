@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   useTerminal,
   type PendingTerminalPaste,
@@ -20,6 +21,7 @@ import {
   type TerminalWorkspaceConnectionState,
 } from '../state/terminalConnection'
 import { useMicStream } from '../hooks/useMicStream'
+import { TalkButton } from './TalkButton'
 import { TerminalCockpit } from './TerminalCockpit'
 import { TerminalContextMenu, type TerminalMenuPosition } from './TerminalContextMenu'
 import { TerminalPasteConfirmation } from './TerminalPasteConfirmation'
@@ -50,6 +52,10 @@ export interface TerminalProps {
   zenMode?: boolean
   /** The session runs on the machine serving this page, where the virtual microphone lives. */
   hostLocal?: boolean
+  /** Claude Code runs in the pane this Terminal has active. */
+  claudeActive?: boolean
+  /** Where the talk button renders; it is absent while the status bar is hidden. */
+  talkSlot?: HTMLElement | null
   onToggleFullscreen?: () => void
   onToggleZen?: () => void
   onRetry?: () => void
@@ -83,6 +89,8 @@ export function Terminal({
   fullscreen,
   zenMode,
   hostLocal,
+  claudeActive,
+  talkSlot,
   onToggleFullscreen,
   onToggleZen,
   onRetry,
@@ -119,6 +127,7 @@ export function Terminal({
     scrollToBottom,
     adjustFontSize,
     sendInput,
+    setVoiceHold,
     sendCommand,
     copySelection,
     pasteClipboard,
@@ -133,9 +142,12 @@ export function Terminal({
   const mic = useMicStream(Boolean(hostLocal))
   const toggleMic = useCallback(() => {
     mic.toggle()
-    // Hold-to-talk keys must reach the Terminal, not press this button again.
     focus()
   }, [focus, mic])
+  const holdSpace = useCallback((on: boolean) => {
+    setVoiceHold(on)
+    focus()
+  }, [focus, setVoiceHold])
 
   const workspaceConnection = connectionState ?? deriveTerminalWorkspaceConnection({
     hub: hubConnection ?? 'ready',
@@ -450,6 +462,14 @@ export function Terminal({
           onToggleZen={onToggleZen}
           onMore={showMenuAtButton}
         />
+      )}
+      {mic.available && talkSlot && createPortal(
+        <TalkButton
+          key={targetKey}
+          disabled={!claudeActive || mic.state !== 'on' || workspaceConnection !== 'connected'}
+          onHold={holdSpace}
+        />,
+        talkSlot,
       )}
       {zenMode && mic.state !== 'off' && (
         <button

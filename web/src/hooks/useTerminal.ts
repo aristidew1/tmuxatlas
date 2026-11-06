@@ -232,6 +232,18 @@ export function useTerminal(
     return true
   }, [assertCurrentConnection, captureConnection])
 
+  /** Asks the server to hold or release the space bar in this Terminal. */
+  const setVoiceHold = useCallback((on: boolean): boolean => {
+    const socket = wsRef.current
+    if (!socket || socket.readyState !== WebSocket.OPEN) return false
+    try {
+      socket.send(JSON.stringify({ type: 'voice-hold', on }))
+      return true
+    } catch {
+      return false
+    }
+  }, [])
+
   const sendInput = useCallback((data: string): boolean => {
     try {
       const bytes = mobileInput
@@ -734,6 +746,7 @@ export function useTerminal(
     sendInput,
     sendRawInput,
     sendCommand,
+    setVoiceHold,
     captureConnection,
     copySelection,
     prepareClipboardPaste,

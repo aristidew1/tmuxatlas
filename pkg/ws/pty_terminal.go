@@ -32,6 +32,7 @@ type resizeMsg struct {
 	Type string `json:"type"`
 	Cols uint16 `json:"cols"`
 	Rows uint16 `json:"rows"`
+	On   bool   `json:"on"`
 }
 
 // HandleSession handles a WebSocket connection for an entire tmux session via PTY.
@@ -93,6 +94,8 @@ func (h *PTYTerminalHandler) HandleSession(w http.ResponseWriter, r *http.Reques
 	}
 	defer ptySess.Close()
 
+	hold := newVoiceHold(ptySess)
+
 	// Read goroutine: PTY → WebSocket (binary messages)
 	done := make(chan struct{})
 	go func() {
@@ -131,6 +134,13 @@ func (h *PTYTerminalHandler) HandleSession(w http.ResponseWriter, r *http.Reques
 				log.WithError(err).Debug("invalid control message")
 				continue
 			}
+			if msg.Type == "voice-hold" {
+				if msg.On {
+					hold.Start()
+				} else {
+					hold.Stop()
+				}
+			}
 			if msg.Type == "resize" && msg.Cols > 0 && msg.Rows > 0 {
 				if err := ptySess.Resize(msg.Cols, msg.Rows); err != nil {
 					log.WithError(err).Debug("resize failed")
@@ -145,6 +155,7 @@ func (h *PTYTerminalHandler) HandleSession(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
+	hold.Stop()
 	<-done
 	log.Info("session ws client disconnected")
 }

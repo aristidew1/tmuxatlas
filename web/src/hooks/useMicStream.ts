@@ -23,6 +23,7 @@ registerProcessor('tmuxatlas-mic-capture', TmuxAtlasMicCapture)
 
 // Past this much unsent audio (~1 s), drop frames: late dictation is worse than a gap.
 const MAX_BUFFERED_BYTES = 32 * 1024
+const MIC_OFF_KEY = 'tmuxatlas.mic.off'
 
 function micErrorMessage(error: unknown): string {
   if (!window.isSecureContext) return 'The microphone needs HTTPS or localhost.'
@@ -39,9 +40,21 @@ async function fetchVoiceStatus(): Promise<VoiceStatus> {
   return await response.json() as VoiceStatus
 }
 
+function isMicTurnedOff(): boolean {
+  try { return localStorage.getItem(MIC_OFF_KEY) === '1' } catch { return false }
+}
+
+function rememberMicTurnedOff(off: boolean) {
+  try {
+    if (off) localStorage.setItem(MIC_OFF_KEY, '1')
+    else localStorage.removeItem(MIC_OFF_KEY)
+  } catch { /* storage unavailable: the microphone turns on next time */ }
+}
+
 /**
- * Streams the browser microphone to the host's virtual microphone. Nothing is
- * captured until start() and all capture stops on stop(), failure or unmount.
+ * Streams the browser microphone to the host's virtual microphone. It starts on
+ * its own unless this browser turned it off, and all capture stops on stop(),
+ * failure or unmount.
  */
 export function useMicStream(allowed: boolean) {
   const [enabled, setEnabled] = useState(false)
@@ -109,8 +122,16 @@ export function useMicStream(allowed: boolean) {
         URL.revokeObjectURL(moduleUrl)
       }
       if (!isCurrent()) return cleanup()
-      await context.resume()
-      if (!isCurrent()) return cleanup()
+      // Starting without a click can leave audio suspended until the next gesture.
+      if (context.state !== 'running') {
+        const resume = () => { void context.resume() }
+        const gestures = ['pointerdown', 'keydown']
+        resume()
+        for (const gesture of gestures) document.addEventListener(gesture, resume, { capture: true })
+        cleanups.push(() => {
+          for (const gesture of gestures) document.removeEventListener(gesture, resume, { capture: true })
+        })
+      }
 
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
       const socket = new WebSocket(`${protocol}//${window.location.host}/ws/mic`)
@@ -154,13 +175,15 @@ export function useMicStream(allowed: boolean) {
   }, [])
 
   const toggle = useCallback(() => {
+    rememberMicTurnedOff(state !== 'off')
     if (state === 'off') void start()
     else stop()
   }, [start, state, stop])
 
   useEffect(() => {
     if (!allowed) stop()
-  }, [allowed, stop])
+    else if (enabled && !isMicTurnedOff()) void start()
+  }, [allowed, enabled, start, stop])
 
   useEffect(() => stop, [stop])
 

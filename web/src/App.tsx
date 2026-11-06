@@ -97,6 +97,7 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
   const terminalContainerRef = useRef<HTMLDivElement>(null)
   const terminalActionsRef = useRef<TerminalCommandActions | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [statusBarSlot, setStatusBarSlot] = useState<HTMLElement | null>(null)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const [terminalFullscreen, setTerminalFullscreen] = useState(false)
   const [zenMode, setZenMode] = useState(false)
@@ -610,6 +611,8 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
                   fullscreen={terminalFullscreen}
                   zenMode={zenMode}
                   hostLocal={activeHost?.local === true}
+                  claudeActive={activePane?.current_command === 'claude'}
+                  talkSlot={statusBarSlot}
                   onToggleFullscreen={toggleFullscreen}
                   onToggleZen={toggleZen}
                   onRetry={retryTerminal}
@@ -647,6 +650,8 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
         hosts={hosts}
         agentCount={allToolEvents.filter(e => e.auto_detected || e.status === 'waiting' || e.status === 'error').length}
         onHelp={() => setHelpOpen(true)}
+        alignSlotToTerminal={!sidebarCollapsed && !terminalFullscreen}
+        onSlotChange={setStatusBarSlot}
       />}
     </div>
   )

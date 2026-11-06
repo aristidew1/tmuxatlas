@@ -35,7 +35,9 @@ describe('terminal input framing', () => {
 
   it('rejects a 65,536-byte body by UTF-8 byte length', () => {
     expect(() => encodeTerminalCommand('x'.repeat(65_536))).toThrowError(TerminalInputError)
-    expect(() => encodeTerminalCommand('你'.repeat(21_846))).toThrow(/maximum/i)
+    expect(() => encodeTerminalCommand('你'.repeat(21_846))).toThrow(
+      /La commande contient .* octets UTF-8 ; le maximum est de/i,
+    )
   })
 
   it('counts UTF-8 bytes instead of UTF-16 code units', () => {

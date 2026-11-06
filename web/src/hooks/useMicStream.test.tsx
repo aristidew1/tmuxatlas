@@ -23,13 +23,15 @@ describe('useMicStream', () => {
   it('turns on by itself when voice is enabled', async () => {
     const { result } = renderHook(() => useMicStream(true))
     await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(result.current.error).toContain('denied'))
+    await waitFor(() => expect(result.current.error).toContain('refusé'))
     expect(result.current.state).toBe('off')
   })
 
   it('does not capture on a host where it is not allowed', async () => {
     renderHook(() => useMicStream(false))
-    await act(async () => { await Promise.resolve() })
+    await act(async () => {
+      await Promise.resolve()
+    })
     expect(apiFetch).not.toHaveBeenCalled()
     expect(getUserMedia).not.toHaveBeenCalled()
   })

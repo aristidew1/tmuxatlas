@@ -1,20 +1,36 @@
-import type { MouseEventHandler, ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
+import {
+  ArrowDown,
+  ArrowLeft,
+  Bell,
+  Clipboard,
+  Copy,
+  Maximize,
+  Mic,
+  MoreHorizontal,
+  Search,
+  Sparkles,
+  ZoomIn,
+  ZoomOut,
+} from 'lucide-react'
+import { IconButton, Sheet, StatusIcon, StatusPill, Tooltip } from './ui'
 import type { MicState } from '../hooks/useMicStream'
 import type { TerminalWorkspaceConnectionState } from '../state/terminalConnection'
+import { workspaceStatusLabel, type WorkspaceStatus } from '../workspace/model'
 
 export interface TerminalCockpitMic {
   state: MicState
   error: string
   onToggle: () => void
 }
-
-interface TerminalCockpitProps {
+interface Props {
   hostLabel: string
   sessionName: string
   windowLabel?: string
   paneLabel?: string
   toolStatus?: string
   connectionState: TerminalWorkspaceConnectionState
+  sessionStatus?: WorkspaceStatus
   canCopy: boolean
   canPaste: boolean
   showScrollToBottom: boolean
@@ -29,145 +45,174 @@ interface TerminalCockpitProps {
   onToggleFullscreen?: () => void
   onToggleZen?: () => void
   onMore: (button: HTMLButtonElement) => void
+  onBackToSessions?: () => void
+  onPreviousSession?: () => void
+  onNextSession?: () => void
+  attentionCount?: number
+  onOpenAlerts?: () => void
+}
+const labels: Record<TerminalWorkspaceConnectionState, string> = {
+  connecting: 'Connexion',
+  rehydrating: 'Synchronisation',
+  connected: 'Connecté',
+  reconnecting: 'Reconnexion',
+  'hub-offline': 'Hub hors ligne',
+  'agent-offline': 'Agent hors ligne',
+  'session-ended': 'Session terminée',
+  'auth-required': 'Connexion requise',
+  'reload-required': 'Actualisation requise',
 }
 
-const connectionLabels: Record<TerminalWorkspaceConnectionState, string> = {
-  connecting: 'Connecting',
-  rehydrating: 'Synchronizing',
-  connected: 'Connected',
-  reconnecting: 'Reconnecting',
-  'hub-offline': 'Hub offline',
-  'agent-offline': 'Agent offline',
-  'session-ended': 'Session ended',
-  'auth-required': 'Sign-in required',
-  'reload-required': 'Reload required',
-}
-
-export function TerminalCockpit({
-  hostLabel,
-  sessionName,
-  windowLabel,
-  paneLabel,
-  toolStatus,
-  connectionState,
-  canCopy,
-  canPaste,
-  showScrollToBottom,
-  fullscreen,
-  zenMode,
-  mic,
-  onSearch,
-  onCopy,
-  onPaste,
-  onFontSize,
-  onScrollToBottom,
-  onToggleFullscreen,
-  onToggleZen,
-  onMore,
-}: TerminalCockpitProps) {
-  const connectionClass = connectionState === 'connected'
-    ? 'text-success'
-    : connectionState === 'reconnecting' || connectionState === 'rehydrating'
-      ? 'text-warning'
-      : connectionState === 'agent-offline' || connectionState === 'session-ended' || connectionState === 'auth-required'
-        ? 'text-destructive'
-        : 'text-muted-foreground'
-
+export function TerminalCockpit(p: Props) {
+  const [sheet, setSheet] = useState(false)
+  const [offset, setOffset] = useState(0)
+  const [dragging, setDragging] = useState(false)
+  const touch = useRef<{ x: number; y: number } | null>(null)
+  const action = (label: string, icon: ReactNode, onClick?: () => void, disabled?: boolean) => (
+    <Tooltip content={label}>
+      <IconButton aria-label={label} size="sm" disabled={disabled} onClick={onClick}>
+        {icon}
+      </IconButton>
+    </Tooltip>
+  )
+  const actions = [
+    { label: 'Rechercher', icon: Search, run: p.onSearch },
+    { label: 'Copier', icon: Copy, run: p.onCopy, disabled: !p.canCopy },
+    { label: 'Coller', icon: Clipboard, run: p.onPaste, disabled: !p.canPaste },
+    { label: 'Réduire la taille', icon: ZoomOut, run: () => p.onFontSize(-1) },
+    { label: 'Augmenter la taille', icon: ZoomIn, run: () => p.onFontSize(1) },
+    { label: p.fullscreen ? 'Quitter le plein écran' : 'Plein écran', icon: Maximize, run: p.onToggleFullscreen },
+    { label: p.zenMode ? 'Quitter Zen' : 'Zen', icon: Sparkles, run: p.onToggleZen },
+    { label: 'Nouvelle sortie', icon: ArrowDown, run: p.showScrollToBottom ? p.onScrollToBottom : undefined },
+    { label: p.mic?.state === 'off' ? 'Activer le micro' : 'Désactiver le micro', icon: Mic, run: p.mic?.onToggle },
+  ]
   return (
-    <div className="terminal-cockpit flex shrink-0 flex-col border-b border-border bg-card font-mono text-xs md:min-h-10 md:flex-row md:items-center md:gap-2 md:px-2">
-      <div className="terminal-cockpit__identity flex min-h-9 min-w-0 items-center gap-2 overflow-hidden px-2 md:min-h-0 md:flex-1 md:px-0">
-        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden whitespace-nowrap text-muted-foreground" aria-label="Terminal target">
-          <span className="min-w-0 truncate text-foreground" title={hostLabel}>{hostLabel}</span>
-          <span className="shrink-0">/</span>
-          <span className="min-w-0 truncate text-foreground" title={sessionName}>{sessionName}</span>
-          {windowLabel && <><span className="hidden lg:inline">/</span><span className="hidden lg:inline">{windowLabel}</span></>}
-          {paneLabel && <><span className="hidden lg:inline">/</span><span className="hidden lg:inline">{paneLabel}</span></>}
-        </div>
-        {toolStatus && <span className="hidden shrink-0 rounded border border-border px-1.5 py-0.5 text-muted-foreground lg:inline-flex">{toolStatus}</span>}
-        {mic?.error && (
-          <span role="alert" title={mic.error} className="min-w-0 truncate text-destructive">{mic.error}</span>
-        )}
-        <span role="status" className={`ml-auto shrink-0 ${connectionClass}`}>
-          {connectionLabels[connectionState]}
-        </span>
-      </div>
+    <>
       <div
-        role="toolbar"
-        aria-label="Terminal controls"
-        className="terminal-cockpit__controls flex min-h-11 w-full shrink-0 items-center gap-1 overflow-x-auto overscroll-x-contain px-2 pb-1 md:min-h-0 md:w-auto md:px-0 md:pb-0"
+        className="terminal-cockpit terminal-cockpit__header flex h-11 shrink-0 items-center gap-1 px-2 text-sm"
+        style={{
+          transform: `translateX(${offset}px)`,
+          opacity: offset ? 0.75 : 1,
+          transition: dragging ? 'none' : 'transform var(--motion-fast), opacity var(--motion-fast)',
+        }}
+        onTouchStart={event => {
+          const point = event.touches[0]
+          if (point) {
+            touch.current = { x: point.clientX, y: point.clientY }
+            setDragging(true)
+          }
+        }}
+        onTouchMove={event => {
+          const point = event.touches[0]
+          const start = touch.current
+          if (!point || !start) return
+          const dx = point.clientX - start.x
+          if (Math.abs(dx) > Math.abs(point.clientY - start.y) * 1.3) setOffset(Math.max(-48, Math.min(48, dx * 0.4)))
+        }}
+        onTouchCancel={() => {
+          touch.current = null
+          setDragging(false)
+          setOffset(0)
+        }}
+        onTouchEnd={event => {
+          const point = event.changedTouches[0]
+          const start = touch.current
+          touch.current = null
+          setDragging(false)
+          setOffset(0)
+          if (!point || !start) return
+          const dx = point.clientX - start.x
+          const dy = point.clientY - start.y
+          if (Math.abs(dx) >= 60 && Math.abs(dx) > Math.abs(dy) * 1.3) {
+            ;(dx > 0 ? p.onPreviousSession : p.onNextSession)?.()
+          }
+        }}
       >
-        {showScrollToBottom && (
-          <CockpitButton label="Scroll to latest Terminal output" onClick={onScrollToBottom}>
-            New output ↓
-          </CockpitButton>
+        <div className="md:hidden">
+          {p.onBackToSessions && action('Retour aux sessions', <ArrowLeft size={16} />, p.onBackToSessions)}
+        </div>
+        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+          <span className="hidden truncate text-muted-foreground md:inline">{p.hostLabel} /</span>
+          <span className="truncate">{p.sessionName}</span>
+          {p.sessionStatus && (
+            <>
+              <StatusIcon status={p.sessionStatus} className="md:hidden" />
+              <span className="hidden md:inline-flex">
+                <StatusPill status={p.sessionStatus}>{workspaceStatusLabel(p.sessionStatus)}</StatusPill>
+              </span>
+            </>
+          )}
+          {p.connectionState !== 'connected' && (
+            <span
+              role="status"
+              title={labels[p.connectionState]}
+              aria-label={labels[p.connectionState]}
+              className="hidden h-2 w-2 shrink-0 rounded-full bg-warning md:inline-block"
+            />
+          )}
+        </div>
+        {p.mic?.error && (
+          <span role="alert" className="truncate text-xs text-destructive">
+            {p.mic.error}
+          </span>
         )}
-        {mic && (
-          <button
-            type="button"
-            aria-label={mic.state === 'off' ? 'Turn on microphone for voice input' : 'Turn off microphone'}
-            aria-pressed={mic.state !== 'off'}
-            onClick={mic.onToggle}
-            className={`min-h-11 shrink-0 rounded border px-2 md:min-h-8 ${mic.state === 'on'
-              ? 'border-destructive text-destructive'
-              : mic.state === 'starting'
-                ? 'border-warning text-warning'
-                : 'border-border text-muted-foreground hover:text-foreground'}`}
-          >
-            {mic.state === 'on' ? '● Mic on' : mic.state === 'starting' ? 'Mic…' : 'Mic'}
+        {p.showScrollToBottom && (
+          <button type="button" onClick={p.onScrollToBottom} className="hidden shrink-0 text-xs text-primary md:block">
+            Nouvelle sortie <ArrowDown size={14} className="inline" />
           </button>
         )}
-        <CockpitButton label="Search Terminal" onClick={onSearch}>Find</CockpitButton>
-        <CockpitButton label="Copy Terminal selection" disabled={!canCopy} onClick={onCopy}>Copy</CockpitButton>
-        <CockpitButton label="Paste into Terminal" disabled={!canPaste} onClick={onPaste}>Paste</CockpitButton>
-        <CockpitButton label="Decrease Terminal font size" onClick={() => onFontSize(-1)}>A−</CockpitButton>
-        <CockpitButton label="Increase Terminal font size" onClick={() => onFontSize(1)}>A+</CockpitButton>
-        {onToggleFullscreen && (
-          <CockpitButton
-            label={fullscreen ? 'Exit Terminal fullscreen' : 'Enter Terminal fullscreen'}
-            onClick={onToggleFullscreen}
-          >
-            {fullscreen ? 'Window' : 'Full'}
-          </CockpitButton>
-        )}
-        {onToggleZen && (
-          <CockpitButton
-            label={zenMode ? 'Exit Terminal Zen Mode' : 'Enter Terminal Zen Mode'}
-            onClick={onToggleZen}
-          >
-            {zenMode ? 'Exit Zen' : 'Zen'}
-          </CockpitButton>
-        )}
-        <CockpitButton
-          label="More Terminal actions"
-          onClick={event => onMore(event.currentTarget)}
-        >
-          ⋯
-        </CockpitButton>
+        <div className="hidden items-center gap-1 md:flex">
+          {p.mic &&
+            action(
+              p.mic.state === 'off' ? 'Activer le micro' : 'Désactiver le micro',
+              <Mic size={16} />,
+              p.mic.onToggle,
+            )}
+          {action('Rechercher', <Search size={16} />, p.onSearch)}
+          {action('Copier', <Copy size={16} />, p.onCopy, !p.canCopy)}
+          {action('Coller', <Clipboard size={16} />, p.onPaste, !p.canPaste)}
+          {p.onToggleFullscreen && action('Plein écran', <Maximize size={16} />, p.onToggleFullscreen)}
+          {p.onToggleZen && action('Zen', <Sparkles size={16} />, p.onToggleZen)}
+          <Tooltip content="Plus">
+            <IconButton aria-label="Plus" size="sm" onClick={event => p.onMore(event.currentTarget)}>
+              <MoreHorizontal size={16} />
+            </IconButton>
+          </Tooltip>
+        </div>
+        <div className="flex items-center md:hidden">
+          {p.onOpenAlerts &&
+            action(
+              `Alertes (${p.attentionCount ?? 0})`,
+              <>
+                <Bell size={16} />
+                {Boolean(p.attentionCount) && <span className="text-xs">{p.attentionCount}</span>}
+              </>,
+              p.onOpenAlerts,
+            )}
+          {action('Plus', <MoreHorizontal size={16} />, () => setSheet(true))}
+        </div>
       </div>
-    </div>
-  )
-}
-
-function CockpitButton({
-  label,
-  disabled,
-  onClick,
-  children,
-}: {
-  label: string
-  disabled?: boolean
-  onClick: MouseEventHandler<HTMLButtonElement>
-  children: ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      disabled={disabled}
-      onClick={onClick}
-      className="min-h-11 shrink-0 rounded border border-border px-2 text-muted-foreground hover:text-foreground disabled:opacity-40 md:min-h-8"
-    >
-      {children}
-    </button>
+      <Sheet open={sheet} onOpenChange={setSheet} title="Actions du terminal" closeLabel="Fermer">
+        <div className="flex flex-col">
+          {actions
+            .filter(item => item.run)
+            .map(item => (
+              <button
+                key={item.label}
+                type="button"
+                disabled={item.disabled}
+                className="flex min-h-11 items-center gap-3 text-left disabled:opacity-40"
+                onClick={() => {
+                  setSheet(false)
+                  item.run?.()
+                }}
+              >
+                <item.icon size={16} aria-hidden="true" />
+                {item.label}
+              </button>
+            ))}
+        </div>
+      </Sheet>
+    </>
   )
 }

@@ -1,13 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 
-export type PushState =
-  | 'unsupported'
-  | 'prompt'
-  | 'granted'
-  | 'denied'
-  | 'syncing'
-  | 'subscribed'
-  | 'error'
+export type PushState = 'unsupported' | 'prompt' | 'granted' | 'denied' | 'syncing' | 'subscribed' | 'error'
 
 const serviceWorkerURL = '/sw.js'
 const serviceWorkerScope = '/'
@@ -50,9 +43,7 @@ export function usePushNotifications() {
   const [state, setState] = useState<PushState>('unsupported')
   const generationRef = useRef(0)
 
-  const getRegistration = useCallback(() => (
-    navigator.serviceWorker.getRegistration(serviceWorkerScope)
-  ), [])
+  const getRegistration = useCallback(() => navigator.serviceWorker.getRegistration(serviceWorkerScope), [])
 
   const reconcile = useCallback(async () => {
     const generation = ++generationRef.current
@@ -86,7 +77,9 @@ export function usePushNotifications() {
 
   useEffect(() => {
     void reconcile()
-    return () => { generationRef.current++ }
+    return () => {
+      generationRef.current++
+    }
   }, [reconcile])
 
   const subscribe = useCallback(async () => {
@@ -100,7 +93,7 @@ export function usePushNotifications() {
       const ready = await navigator.serviceWorker.ready
       const activeRegistration = ready.scope === registration.scope ? ready : registration
       const response = await fetch('/api/push/vapid-key')
-      if (!response.ok) throw new Error('Failed to get VAPID key')
+      if (!response.ok) throw new Error('Impossible de récupérer la clé VAPID')
       const { public_key } = await response.json()
       const subscription = await activeRegistration.pushManager.subscribe({
         userVisibleOnly: true,

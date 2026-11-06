@@ -18,10 +18,13 @@ func (executor tmuxRuntimeExecutor) Execute(_ context.Context, operation string,
 	}
 	switch operation {
 	case "new":
-		if err := executor.client.NewSession(target.Session); err != nil {
-			return nil, err
-		}
-		return json.Marshal(map[string]any{"target": target})
+		return newSession(executor.client, target, payload)
+	case "preview":
+		return previewSession(executor.client, target, payload)
+	case "reply":
+		return replySession(executor.client, target, payload)
+	case "directories":
+		return listDirectories()
 	case "rename":
 		var params struct {
 			NewName string `json:"new_name"`
@@ -72,6 +75,6 @@ func (executor tmuxRuntimeExecutor) Execute(_ context.Context, operation string,
 		}
 		return json.RawMessage(`{"ok":true}`), nil
 	default:
-		return nil, fmt.Errorf("unsupported operation")
+		return nil, RuntimeError{Code: ErrorUnsupported, Message: "unsupported operation"}
 	}
 }

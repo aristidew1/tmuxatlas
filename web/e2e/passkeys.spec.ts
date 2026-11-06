@@ -47,7 +47,7 @@ test.beforeAll(async () => {
     '--socket', socketPath,
     '--discovery-interval', '60',
   ], {
-    env: { ...process.env, HOME: testHome, TMUXATLAS_SESSION_TTL: '1h' },
+    env: { ...process.env, HOME: testHome, XDG_CONFIG_HOME: join(testHome, 'config'), XDG_DATA_HOME: join(testHome, 'data'), XDG_CACHE_HOME: join(testHome, 'cache'), XDG_RUNTIME_DIR: join(testHome, 'runtime'), TMUXATLAS_NO_AUTH: 'false', TMUXATLAS_SESSION_TTL: '1h' },
   })
   let logs = ''
   const collect = (chunk: Buffer) => {
@@ -66,7 +66,7 @@ test.beforeAll(async () => {
   const initialToken = setupToken
   setupToken = await new Promise<string>((resolveToken, rejectToken) => {
     execFile(binary, ['bootstrap-token', '--socket', socketPath], {
-      env: { ...process.env, HOME: testHome },
+      env: { ...process.env, HOME: testHome, XDG_CONFIG_HOME: join(testHome, 'config'), XDG_DATA_HOME: join(testHome, 'data'), XDG_CACHE_HOME: join(testHome, 'cache'), XDG_RUNTIME_DIR: join(testHome, 'runtime') },
     }, (error, stdout) => {
       if (error) rejectToken(error)
       else resolveToken(stdout.trim())
@@ -81,7 +81,7 @@ test.beforeAll(async () => {
     throw new Error(`Rotated bootstrap token replay returned ${replay.status}, want 401`)
   }
 
-  browser = await chromium.launch({ channel: process.env.CI ? 'chromium' : 'chrome' })
+  browser = await chromium.launch()
   context = await browser.newContext()
   page = await context.newPage()
   cdp = await context.newCDPSession(page)
@@ -108,15 +108,15 @@ test.afterAll(async () => {
 
 test('complete Passkey lifecycle and browser mutation protections', async ({ request }) => {
   await page.goto(baseURL)
-  await page.getByPlaceholder('One-time setup token from server logs').fill(setupToken)
-  await page.getByPlaceholder('Passkey label (optional)').fill('Primary')
-  await page.getByRole('button', { name: 'Create passkey' }).click()
+  await page.getByPlaceholder('Jeton de configuration').fill(setupToken)
+  await page.getByPlaceholder('Libellé de la passkey (facultatif)').fill('Primary')
+  await page.getByRole('button', { name: 'Créer la passkey' }).click()
 
-  await expect(page.getByRole('heading', { name: 'agent setup' })).toBeVisible()
-  await page.getByRole('button', { name: 'Next' }).click()
-  await page.getByRole('button', { name: 'Continue to Dashboard' }).click()
+  await expect(page.getByRole('heading', { name: 'Configuration des agents' })).toBeVisible()
+  await page.getByRole('button', { name: 'Suivant' }).click()
+  await page.getByRole('button', { name: 'Accéder au tableau de bord' }).click()
 
-  await page.getByTitle('Settings').click()
+  await page.getByTitle('Réglages').click()
 
   const authCheck = await page.evaluate(async () => fetch('/api/auth/check').then((response) => response.json()))
   expect(authCheck.csrf_token).toBeTruthy()
@@ -150,14 +150,14 @@ test('complete Passkey lifecycle and browser mutation protections', async ({ req
   const registeredCredentials = await cdp.send('WebAuthn.getCredentials', { authenticatorId })
   expect(registeredCredentials.credentials).toHaveLength(1)
   expect(registeredCredentials.credentials[0].isResidentCredential).toBe(true)
-  await page.getByRole('button', { name: 'Sign out' }).click()
+  await page.getByRole('button', { name: 'Se déconnecter' }).click()
   await cdp.send('WebAuthn.setUserVerified', { authenticatorId, isUserVerified: true })
   await cdp.send('WebAuthn.setAutomaticPresenceSimulation', {
     authenticatorId,
     enabled: true,
   })
-  await page.getByRole('button', { name: 'Sign in with passkey' }).click()
-  await page.getByTitle('Settings').click()
+  await page.getByRole('button', { name: 'Se connecter avec une passkey' }).click()
+  await page.getByTitle('Réglages').click()
 
   await cdp.send('WebAuthn.setAutomaticPresenceSimulation', {
     authenticatorId,
@@ -173,21 +173,21 @@ test('complete Passkey lifecycle and browser mutation protections', async ({ req
       automaticPresenceSimulation: true,
     },
   })
-  await page.getByLabel('New passkey label').fill('Backup')
-  await page.getByRole('button', { name: 'Add passkey' }).click()
+  await page.getByLabel('Nom de la nouvelle passkey').fill('Backup')
+  await page.getByRole('button', { name: 'Ajouter une passkey' }).click()
   await expect(page.getByTestId('passkey-row')).toHaveCount(2)
 
   const backup = page.getByTestId('passkey-row').filter({ hasText: 'Backup' })
-  await backup.getByRole('button', { name: 'Rename' }).click()
-  await page.getByLabel('Passkey label', { exact: true }).fill('Travel key')
-  await page.getByRole('button', { name: 'Save' }).click()
+  await backup.getByRole('button', { name: 'Renommer' }).click()
+  await page.getByLabel('Nom de la passkey', { exact: true }).fill('Travel key')
+  await page.getByRole('button', { name: 'Enregistrer' }).click()
   await expect(page.getByText('Travel key', { exact: true })).toBeVisible()
 
   page.once('dialog', (dialog) => dialog.accept())
   const primary = page.getByTestId('passkey-row').filter({ hasText: 'Primary' })
-  await primary.getByRole('button', { name: 'Delete' }).click()
+  await primary.getByRole('button', { name: 'Supprimer' }).click()
   await expect(page.getByTestId('passkey-row')).toHaveCount(1)
-  await expect(page.getByRole('button', { name: 'Delete' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Supprimer' })).toBeDisabled()
 
   const finalDeleteStatus = await page.evaluate(async () => {
     const inventory = await fetch('/api/auth/passkeys').then((response) => response.json())

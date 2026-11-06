@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -167,6 +168,9 @@ func (dispatcher *RequestDispatcher) Dispatch(ctx context.Context, request Runti
 	if _, ok := dispatcher.Capabilities[CapabilitySessionActions]; !ok {
 		return RuntimeAck{}, errorOutcome(request, ErrorCapabilityUnsupported, "")
 	}
+	if _, ok := dispatcher.Capabilities[CapabilitySessionExtras]; !ok && requiresSessionExtras(request.Operation, request.Payload) {
+		return RuntimeAck{}, errorOutcome(request, ErrorUnsupported, "operation not supported by this Agent")
+	}
 	if dispatcher.Executor == nil || dispatcher.Cache == nil {
 		return RuntimeAck{}, errorOutcome(request, ErrorExecutionFailed, "runtime executor unavailable")
 	}
@@ -174,6 +178,10 @@ func (dispatcher *RequestDispatcher) Dispatch(ctx context.Context, request Runti
 	outcome := dispatcher.Cache.Do(ctx, request, func() RequestOutcome {
 		result, err := dispatcher.Executor.Execute(ctx, request.Operation, request.Target, request.Payload)
 		if err != nil {
+			var runtimeError RuntimeError
+			if errors.As(err, &runtimeError) {
+				return errorOutcome(request, runtimeError.Code, runtimeError.Message)
+			}
 			return errorOutcome(request, ErrorExecutionFailed, "target operation failed")
 		}
 		if len(result) == 0 {

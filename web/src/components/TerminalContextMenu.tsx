@@ -1,3 +1,4 @@
+import { ArrowDown, Clipboard, Copy, Search, SquareMousePointer, ZoomIn, ZoomOut } from 'lucide-react'
 import { useEffect, useRef, type KeyboardEvent } from 'react'
 
 export interface TerminalMenuPosition {
@@ -14,6 +15,9 @@ interface TerminalContextMenuProps {
   onFind: () => void
   onSelectAll: () => void
   onClose: () => void
+  onFontSize?: (delta: number) => void
+  onScrollToBottom?: () => void
+  showScrollToBottom?: boolean
 }
 
 export function TerminalContextMenu({
@@ -25,6 +29,9 @@ export function TerminalContextMenu({
   onFind,
   onSelectAll,
   onClose,
+  onFontSize,
+  onScrollToBottom,
+  showScrollToBottom,
 }: TerminalContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -46,9 +53,7 @@ export function TerminalContextMenu({
     }
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
     event.preventDefault()
-    const items = Array.from(
-      menuRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [],
-    )
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])
     if (items.length === 0) return
     const current = items.indexOf(document.activeElement as HTMLButtonElement)
     const delta = event.key === 'ArrowDown' ? 1 : -1
@@ -59,14 +64,14 @@ export function TerminalContextMenu({
     <>
       <button
         type="button"
-        aria-label="Close Terminal menu"
+        aria-label="Fermer le menu du terminal"
         className="fixed inset-0 z-40 cursor-default bg-transparent"
         onClick={onClose}
       />
       <div
         ref={menuRef}
         role="menu"
-        aria-label="Terminal actions"
+        aria-label="Actions du terminal"
         onKeyDown={onKeyDown}
         className="fixed z-50 min-w-40 rounded border border-border bg-popover p-1 text-sm text-popover-foreground shadow-lg"
         style={{
@@ -74,11 +79,20 @@ export function TerminalContextMenu({
           top: Math.max(8, Math.min(position.y, window.innerHeight - 190)),
         }}
       >
-        <MenuItem label="Copy selection" disabled={!canCopy} onClick={() => run(onCopy)} />
-        <MenuItem label="Paste" disabled={!canPaste} onClick={() => run(onPaste)} />
+        <MenuItem icon={Copy} label="Copier la sélection" disabled={!canCopy} onClick={() => run(onCopy)} />
+        <MenuItem icon={Clipboard} label="Coller" disabled={!canPaste} onClick={() => run(onPaste)} />
         <div className="my-1 border-t border-border" />
-        <MenuItem label="Find in Terminal" onClick={() => run(onFind)} />
-        <MenuItem label="Select all" onClick={() => run(onSelectAll)} />
+        <MenuItem icon={Search} label="Rechercher dans le terminal" onClick={() => run(onFind)} />
+        {onFontSize && (
+          <>
+            <MenuItem icon={ZoomOut} label="Taille A−" onClick={() => run(() => onFontSize(-1))} />
+            <MenuItem icon={ZoomIn} label="Taille A+" onClick={() => run(() => onFontSize(1))} />
+          </>
+        )}
+        {showScrollToBottom && onScrollToBottom && (
+          <MenuItem icon={ArrowDown} label="Nouvelle sortie" onClick={() => run(onScrollToBottom)} />
+        )}
+        <MenuItem icon={SquareMousePointer} label="Tout sélectionner" onClick={() => run(onSelectAll)} />
       </div>
     </>
   )
@@ -86,10 +100,12 @@ export function TerminalContextMenu({
 
 function MenuItem({
   label,
+  icon: Icon,
   disabled,
   onClick,
 }: {
   label: string
+  icon: typeof Copy
   disabled?: boolean
   onClick: () => void
 }) {
@@ -99,8 +115,9 @@ function MenuItem({
       role="menuitem"
       disabled={disabled}
       onClick={onClick}
-      className="flex min-h-9 w-full items-center rounded px-3 text-left hover:bg-secondary focus:bg-secondary disabled:opacity-40"
+      className="flex min-h-9 w-full items-center gap-3 rounded px-3 text-left hover:bg-secondary focus:bg-secondary disabled:opacity-40"
     >
+      <Icon size={16} aria-hidden="true" />
       {label}
     </button>
   )

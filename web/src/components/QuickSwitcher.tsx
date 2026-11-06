@@ -4,7 +4,9 @@ import { formatShortcut } from '../commands/registry'
 import { cn } from '../lib/utils'
 import type { WorkspaceSession, WorkspaceViewModel } from '../workspace/model'
 import { isAttentionStatus, workspaceStatusLabel } from '../workspace/model'
-import { Dialog } from './ui'
+import { Dialog, StatusIcon } from './ui'
+import { useHostLabel } from '../lib/hostLabel'
+import type { WorkspaceStatus } from '../workspace/model'
 
 interface QuickSwitcherProps {
   workspace: WorkspaceViewModel
@@ -26,10 +28,20 @@ interface PaletteItem {
   disabled: boolean
   target?: string
   windowIndex?: number
+  status?: WorkspaceStatus
   command?: RegisteredCommand
 }
 
-const groupOrder: PaletteGroup[] = ['Needs Attention', 'Commands', 'Pinned', 'Recent', 'Hosts', 'Sessions', 'Windows', 'Agents']
+const groupOrder: PaletteGroup[] = [
+  'Needs Attention',
+  'Commands',
+  'Pinned',
+  'Recent',
+  'Hosts',
+  'Sessions',
+  'Windows',
+  'Agents',
+]
 
 function fuzzyScore(query: string, text: string): number | null {
   const normalizedQuery = query.trim().toLowerCase()
@@ -59,6 +71,7 @@ function sessionItem(session: WorkspaceSession, group: PaletteGroup): PaletteIte
     detail: `${session.hostName} · ${workspaceStatusLabel(session.status)}${agentDetail}`,
     keywords: session.searchText,
     disabled: false,
+    status: session.status,
     target: session.key,
   }
 }
@@ -71,6 +84,7 @@ export function QuickSwitcher({
   onSelect,
   onClose,
 }: QuickSwitcherProps) {
+  const hostLabel = useHostLabel()
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -79,22 +93,26 @@ export function QuickSwitcher({
   const allItems = useMemo<PaletteItem[]>(() => {
     const pinned = new Set(pinnedTargets)
     const recent = new Set(recentTargets)
-    const items: PaletteItem[] = commands.filter(command => command.id !== 'palette.open').map(command => ({
-      id: `command:${command.id}`,
-      group: 'Commands',
-      label: command.label,
-      detail: command.enabled ? formatShortcut(command.shortcut) || command.category : 'Unavailable in this context',
-      keywords: `${command.id} ${command.label} ${command.category} ${command.shortcut || ''}`,
-      disabled: !command.enabled,
-      command,
-    }))
+    const items: PaletteItem[] = commands
+      .filter(command => command.id !== 'palette.open')
+      .map(command => ({
+        id: `command:${command.id}`,
+        group: 'Commands',
+        label: command.label,
+        detail: command.enabled
+          ? formatShortcut(command.shortcut) || command.category
+          : 'Indisponible dans ce contexte',
+        keywords: `${command.id} ${command.label} ${command.category} ${command.shortcut || ''}`,
+        disabled: !command.enabled,
+        command,
+      }))
 
     for (const host of workspace.hosts) {
       items.push({
         id: `host:${host.id}`,
         group: 'Hosts',
-        label: host.name,
-        detail: `${host.sessionCount} session${host.sessionCount === 1 ? '' : 's'} · ${workspaceStatusLabel(host.status)} · ${host.id}`,
+        label: hostLabel(host.id, host.name === host.id ? 'Hôte' : host.name),
+        detail: `${host.sessionCount} session${host.sessionCount === 1 ? '' : 's'} · ${workspaceStatusLabel(host.status)}`,
         keywords: `${host.name} ${host.id} ${host.status}`,
         disabled: host.sessions.length === 0,
         target: host.sessions[0]?.key,
@@ -109,14 +127,18 @@ export function QuickSwitcher({
           : recent.has(session.key)
             ? 'Recent'
             : 'Sessions'
-      items.push(sessionItem(session, group))
+      items.push({
+        ...sessionItem(session, group),
+        detail: `${hostLabel(session.hostId, session.hostName === session.hostId ? 'Hôte' : session.hostName)} · ${workspaceStatusLabel(session.status)}${session.agents.length ? ` · ${session.agents.join(', ')}` : ''}`,
+      })
 
       for (const window of session.source.windows) {
         items.push({
           id: `window:${session.key}:${window.index}`,
           group: 'Windows',
           label: `${session.name} / ${window.name}`,
-          detail: `${session.hostName} · Window ${window.index}${window.active ? ' · Active' : ''}`,
+          detail: `${hostLabel(session.hostId, session.hostName === session.hostId ? 'Hôte' : session.hostName)} · Fenêtre ${window.index}${window.active ? ' · Active' : ''}`,
+          status: session.status,
           keywords: `${session.searchText} ${window.name} window ${window.index}`,
           disabled: session.status === 'offline',
           target: session.key,
@@ -129,7 +151,7 @@ export function QuickSwitcher({
           id: `agent:${session.key}:${agent}`,
           group: 'Agents',
           label: agent,
-          detail: `${session.hostName} / ${session.name} · ${workspaceStatusLabel(session.status)}`,
+          detail: `${hostLabel(session.hostId, session.hostName === session.hostId ? 'Hôte' : session.hostName)} / ${session.name} · ${workspaceStatusLabel(session.status)}`,
           keywords: `${session.searchText} ${agent}`,
           disabled: false,
           target: session.key,
@@ -137,25 +159,32 @@ export function QuickSwitcher({
       }
     }
     return items
-  }, [commands, pinnedTargets, recentTargets, workspace])
+  }, [commands, pinnedTargets, recentTargets, workspace, hostLabel])
 
   const filtered = useMemo(() => {
     const scored = allItems.flatMap(item => {
       const score = fuzzyScore(query, `${item.label} ${item.detail || ''} ${item.keywords}`)
       return score === null ? [] : [{ item, score }]
     })
-    return scored.sort((left, right) => (
-      left.score - right.score
-      || groupOrder.indexOf(left.item.group) - groupOrder.indexOf(right.item.group)
-      || Number(left.item.disabled) - Number(right.item.disabled)
-      || left.item.label.localeCompare(right.item.label)
-    )).map(value => value.item)
+    return scored
+      .sort(
+        (left, right) =>
+          left.score - right.score ||
+          groupOrder.indexOf(left.item.group) - groupOrder.indexOf(right.item.group) ||
+          Number(left.item.disabled) - Number(right.item.disabled) ||
+          left.item.label.localeCompare(right.item.label),
+      )
+      .map(value => value.item)
   }, [allItems, query])
 
-  const grouped = useMemo(() => groupOrder.flatMap(group => {
-    const items = filtered.filter(item => item.group === group)
-    return items.length > 0 ? [{ group, items }] : []
-  }), [filtered])
+  const grouped = useMemo(
+    () =>
+      groupOrder.flatMap(group => {
+        const items = filtered.filter(item => item.group === group)
+        return items.length > 0 ? [{ group, items }] : []
+      }),
+    [filtered],
+  )
 
   useEffect(() => {
     const firstEnabled = filtered.findIndex(item => !item.disabled)
@@ -214,10 +243,11 @@ export function QuickSwitcher({
   return (
     <Dialog
       open
-      onOpenChange={open => { if (!open) onClose() }}
-      title="Command Palette"
-      description="Search commands and stable Workspace targets."
-      closeLabel="Close Command Palette"
+      onOpenChange={open => {
+        if (!open) onClose()
+      }}
+      title={<span className="sr-only">Rechercher</span>}
+      closeLabel="Fermer la recherche"
       initialFocusRef={inputRef}
       className="command-palette-dialog"
     >
@@ -226,7 +256,7 @@ export function QuickSwitcher({
           <input
             ref={inputRef}
             role="combobox"
-            aria-label="Search commands, hosts, sessions, windows, and agents"
+            aria-label="Rechercher des commandes, hôtes, sessions, fenêtres et agents"
             aria-autocomplete="list"
             aria-expanded="true"
             aria-controls="command-palette-results"
@@ -234,18 +264,39 @@ export function QuickSwitcher({
             value={query}
             onChange={event => setQuery(event.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Search commands, hosts, sessions, windows, or agents…"
-            className="h-11 w-full border-none bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground"
+            placeholder="Rechercher une commande, une session ou un agent…"
+            className="h-11 w-full border-none bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
           />
         </div>
-        <div id="command-palette-results" ref={listRef} role="listbox" className="flex-1 overflow-y-auto overscroll-contain py-2">
+        <div
+          id="command-palette-results"
+          ref={listRef}
+          role="listbox"
+          className="flex-1 overflow-y-auto overscroll-contain py-2"
+        >
           {filtered.length === 0 && (
-            <div className="px-4 py-8 text-center text-sm text-muted-foreground">No matching commands or targets</div>
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground">Aucun résultat</div>
           )}
           {grouped.map(({ group, items }) => (
             <div key={group} role="group" aria-labelledby={`palette-group-${group.replace(/\s+/g, '-').toLowerCase()}`}>
-              <div id={`palette-group-${group.replace(/\s+/g, '-').toLowerCase()}`} className="px-4 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                {group}
+              <div
+                id={`palette-group-${group.replace(/\s+/g, '-').toLowerCase()}`}
+                className="px-4 pb-1 pt-2 text-2xs  text-muted-foreground"
+              >
+                {
+                  (
+                    {
+                      'Needs Attention': 'À traiter',
+                      Commands: 'Commandes',
+                      Pinned: 'Épinglés',
+                      Recent: 'Récents',
+                      Hosts: 'Hôtes',
+                      Sessions: 'Sessions',
+                      Windows: 'Fenêtres',
+                      Agents: 'Agents',
+                    } as const
+                  )[group]
+                }
               </div>
               {items.map(item => {
                 const index = filtered.indexOf(item)
@@ -258,27 +309,45 @@ export function QuickSwitcher({
                     aria-disabled={item.disabled || undefined}
                     onMouseDown={event => event.preventDefault()}
                     onClick={() => execute(item)}
-                    onMouseEnter={() => { if (!item.disabled) setSelectedIndex(index) }}
+                    onMouseEnter={() => {
+                      if (!item.disabled) setSelectedIndex(index)
+                    }}
                     className={cn(
                       'mx-2 flex min-h-11 items-center gap-3 rounded-lg px-3 py-2 text-sm',
                       item.disabled ? 'cursor-not-allowed opacity-45' : 'cursor-pointer',
-                      index === selectedIndex && !item.disabled ? 'bg-primary/15 text-foreground' : 'text-foreground hover:bg-muted/70',
+                      index === selectedIndex && !item.disabled
+                        ? 'bg-primary/15 text-foreground'
+                        : 'text-foreground hover:bg-muted/70',
                     )}
                   >
-                    <span aria-hidden="true" className={cn(
-                      'h-2 w-2 shrink-0 rounded-full',
-                      item.group === 'Needs Attention' ? 'bg-warning' : item.command ? 'bg-primary' : 'bg-muted-foreground/60',
-                    )} />
+                    {item.status ? (
+                      <StatusIcon
+                        status={item.status}
+                        className={
+                          item.status === 'error'
+                            ? 'text-destructive'
+                            : item.status === 'waiting'
+                              ? 'text-warning'
+                              : 'text-muted-foreground'
+                        }
+                      />
+                    ) : (
+                      <StatusIcon status="neutral" className="text-muted-foreground" />
+                    )}
                     <span className="min-w-0 flex-1 truncate font-medium">{item.label}</span>
-                    {item.detail && <span className="max-w-[55%] truncate text-xs text-muted-foreground">{item.detail}</span>}
+                    {item.detail && (
+                      <span className="max-w-[55%] truncate text-xs text-muted-foreground">{item.detail}</span>
+                    )}
                   </div>
                 )
               })}
             </div>
           ))}
         </div>
-        <div className="flex gap-4 border-t border-border px-4 py-2 text-[11px] text-muted-foreground">
-          <span>↑↓ Navigate</span><span>↵ Run</span><span>Esc Close</span>
+        <div className="flex gap-4 border-t border-border px-4 py-2 text-2xs text-muted-foreground">
+          <span>↑↓ Naviguer</span>
+          <span>↵ Exécuter</span>
+          <span>Échap Fermer</span>
         </div>
       </div>
     </Dialog>

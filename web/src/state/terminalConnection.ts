@@ -26,53 +26,50 @@ export interface TerminalWorkspaceConnection {
   recoverable: boolean
 }
 
-const connectionCopy: Record<
-  TerminalWorkspaceConnectionState,
-  Omit<TerminalWorkspaceConnection, 'state'>
-> = {
+const connectionCopy: Record<TerminalWorkspaceConnectionState, Omit<TerminalWorkspaceConnection, 'state'>> = {
   connecting: {
-    label: 'Connecting',
-    detail: 'Opening the Terminal connection…',
+    label: 'Connexion',
+    detail: 'Ouverture de la connexion au terminal…',
     recoverable: false,
   },
   rehydrating: {
-    label: 'Synchronizing',
-    detail: 'Refreshing the current Hub state…',
+    label: 'Synchronisation',
+    detail: 'Actualisation de l’état du Hub…',
     recoverable: false,
   },
   connected: {
-    label: 'Connected',
-    detail: 'Terminal input and output are live.',
+    label: 'Connecté',
+    detail: 'Le terminal est connecté.',
     recoverable: false,
   },
   reconnecting: {
-    label: 'Reconnecting',
-    detail: 'The Terminal connection was interrupted. Retrying…',
+    label: 'Reconnexion',
+    detail: 'La connexion au terminal a été interrompue. Nouvelle tentative…',
     recoverable: true,
   },
   'hub-offline': {
-    label: 'Hub offline',
-    detail: 'The browser cannot currently reach the Hub.',
+    label: 'Hub hors ligne',
+    detail: 'Le navigateur ne peut pas joindre le Hub.',
     recoverable: true,
   },
   'agent-offline': {
-    label: 'Agent offline',
-    detail: 'The selected Host is not connected to the Hub.',
+    label: 'Agent hors ligne',
+    detail: 'L’hôte sélectionné n’est pas connecté au Hub.',
     recoverable: true,
   },
   'session-ended': {
-    label: 'Session ended',
-    detail: 'The selected tmux Session is no longer available.',
+    label: 'Session terminée',
+    detail: 'La session tmux sélectionnée n’est plus disponible.',
     recoverable: false,
   },
   'auth-required': {
-    label: 'Sign in required',
-    detail: 'Your login session has expired.',
+    label: 'Connexion requise',
+    detail: 'Votre session de connexion a expiré.',
     recoverable: true,
   },
   'reload-required': {
-    label: 'Reload required',
-    detail: 'TmuxAtlas was updated and this page must be reloaded.',
+    label: 'Rechargement requis',
+    detail: 'Atlas a été mis à jour. Rechargez cette page.',
     recoverable: true,
   },
 }

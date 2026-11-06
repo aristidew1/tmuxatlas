@@ -255,3 +255,27 @@ func (c *Client) KillSession(name string) error {
 func (c *Client) CapturePaneContent(paneID string) (string, error) {
 	return c.Exec("capture-pane", "-t", paneID, "-p")
 }
+
+// CapturePaneText returns the visible text of a pane as plain text (no escape
+// sequences), with wrapped lines joined.
+func (c *Client) CapturePaneText(paneID string) (string, error) {
+	return c.Exec("capture-pane", "-p", "-J", "-t", paneID)
+}
+
+// NewSessionIn creates a detached session whose first shell starts in dir.
+func (c *Client) NewSessionIn(name, dir string) error {
+	_, err := c.Exec("new-session", "-d", "-s", name, "-c", dir)
+	return err
+}
+
+// SendLiteral types text literally into the target pane (no key-name parsing).
+func (c *Client) SendLiteral(target, text string) error {
+	_, err := c.Exec("send-keys", "-t", target, "-l", "--", text)
+	return err
+}
+
+// SendEnter presses Enter in the target pane.
+func (c *Client) SendEnter(target string) error {
+	_, err := c.Exec("send-keys", "-t", target, "Enter")
+	return err
+}

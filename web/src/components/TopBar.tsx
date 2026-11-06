@@ -1,14 +1,19 @@
-import { useState, useEffect, useRef } from 'react'
-import { ToolEvent } from '../hooks/useToolEvents'
+import { useEffect, useRef } from 'react'
+import { Bell, PanelLeft, Plus, Search, Settings } from 'lucide-react'
+import type { ToolEvent } from '../hooks/useToolEvents'
 import { usePreferences } from '../hooks/usePreferences'
-import { toolColors, statusConfig } from '../theme'
-import { cn } from '../lib/utils'
+import { formatShortcut } from '../commands/registry'
+import { AtlasMark } from './Brand'
+import { Kbd, Menu, StatusIcon } from './ui'
 
 interface TopBarProps {
   currentView: string
   sidebarCollapsed: boolean
   onToggleCollapse: () => void
   onOverview: () => void
+  onMonitoring: () => void
+  onWall: () => void
+  onOpenPalette: () => void
   onSettings: () => void
   onNewSession?: () => void
   events: ToolEvent[]
@@ -17,9 +22,15 @@ interface TopBarProps {
   onDismissAll: () => void
 }
 
-function formatPane(pane?: string): string {
-  if (!pane) return ''
-  return pane.startsWith('%') ? pane.slice(1) : pane
+function relativeTime(timestamp: string) {
+  const date = Date.parse(timestamp)
+  if (Number.isNaN(date)) return ''
+  const seconds = Math.round((date - Date.now()) / 1000)
+  const format = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
+  if (Math.abs(seconds) < 60) return format.format(seconds, 'second')
+  if (Math.abs(seconds) < 3600) return format.format(Math.round(seconds / 60), 'minute')
+  if (Math.abs(seconds) < 86400) return format.format(Math.round(seconds / 3600), 'hour')
+  return format.format(Math.round(seconds / 86400), 'day')
 }
 
 export function TopBar({
@@ -27,6 +38,9 @@ export function TopBar({
   sidebarCollapsed,
   onToggleCollapse,
   onOverview,
+  onMonitoring,
+  onWall,
+  onOpenPalette,
   onSettings,
   onNewSession,
   events,
@@ -34,161 +48,176 @@ export function TopBar({
   onDismiss,
   onDismissAll,
 }: TopBarProps) {
-  const actionable = events.filter(e => e.status === 'waiting' || e.status === 'error')
-  const [expanded, setExpanded] = useState<string | null>(null)
+  const actionable = events.filter(event => event.status === 'waiting' || event.status === 'error')
   const { prefs } = usePreferences()
-  const dismissTimers = useRef<Map<string, number>>(new Map())
-
-  // Auto-dismiss completed events after configured seconds
+  const timers = useRef<Map<string, number>>(new Map())
   useEffect(() => {
     const seconds = prefs.agent_banner.auto_dismiss_seconds
     if (seconds <= 0) return
-
-    events.forEach((evt, i) => {
-      if (evt.status !== 'waiting' && evt.status !== 'error') return
-      const key = `${evt.tool}-${evt.session}-${evt.pane}-${i}`
-      if (dismissTimers.current.has(key)) return
-      const timer = window.setTimeout(() => {
-        onDismiss(evt)
-        dismissTimers.current.delete(key)
-      }, seconds * 1000)
-      dismissTimers.current.set(key, timer)
+    events.forEach((event, index) => {
+      if (event.status !== 'waiting' && event.status !== 'error') return
+      const key = `${event.tool}-${event.session}-${event.pane}-${index}`
+      if (timers.current.has(key)) return
+      timers.current.set(
+        key,
+        window.setTimeout(() => {
+          onDismiss(event)
+          timers.current.delete(key)
+        }, seconds * 1000),
+      )
     })
-
+    const current = timers.current
     return () => {
-      dismissTimers.current.forEach(t => clearTimeout(t))
-      dismissTimers.current.clear()
+      current.forEach(clearTimeout)
+      current.clear()
     }
   }, [events, prefs.agent_banner.auto_dismiss_seconds, onDismiss])
 
+  const button =
+    'ui-focus-ring flex min-h-11 min-w-11 items-center justify-center gap-2 rounded px-2 ' +
+    'text-muted-foreground hover:bg-secondary hover:text-foreground md:min-h-8 md:min-w-8'
+  const navigation = [
+    ['overview', 'Vue d’ensemble', onOverview],
+    ['wall', 'Mur', onWall],
+    ['monitoring', 'Monitoring', onMonitoring],
+  ] as const
+  const alertColor = actionable.some(event => event.status === 'error')
+    ? 'text-destructive'
+    : actionable.length
+      ? 'text-warning'
+      : 'text-muted-foreground'
+  const collapseLabel = sidebarCollapsed ? 'Déplier la barre latérale' : 'Replier la barre latérale'
+
   return (
-    <header className="flex min-h-12 shrink-0 items-center justify-between border-b border-border bg-card px-2 pt-[var(--safe-area-inset-top)] font-mono text-sm font-bold sm:px-4">
-      {/* Left: Logo + alerts */}
-      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden sm:gap-4">
-        <button type="button" aria-label="Go to Overview" className="flex shrink-0 cursor-pointer items-center gap-2 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={onOverview}>
-          <img src="/icon-192.png" alt="" width="22" height="22" className="rounded-sm" />
-          <span className="ui-heading-text hidden text-sm text-primary sm:inline">TmuxAtlas</span>
-        </button>
-
-        {/* New session + collapse sidebar */}
-        <div className="flex items-center gap-1 shrink-0">
+    <header className="flex min-h-12 shrink-0 items-center gap-1 border-b border-border bg-card px-2 pt-[var(--safe-area-inset-top)] font-sans text-sm md:gap-3 md:px-4">
+      <button
+        type="button"
+        onClick={onOverview}
+        aria-label="Vue d’ensemble"
+        className="ui-focus-ring flex min-w-0 items-center gap-2 rounded"
+      >
+        <AtlasMark />
+        <span>Atlas</span>
+      </button>
+      <nav aria-label="Navigation principale" className="hidden items-center gap-1 md:flex">
+        {navigation.map(([view, label, action]) => (
           <button
-            onClick={() => onNewSession?.()}
-            aria-label="New session"
-            title="New session"
-            className="grid min-h-11 min-w-11 place-items-center rounded text-foreground transition-colors hover:bg-secondary sm:min-h-8 sm:min-w-8"
+            key={view}
+            type="button"
+            onClick={action}
+            aria-current={currentView === view ? 'page' : undefined}
+            className={`${button} ${currentView === view ? 'bg-secondary text-foreground' : ''}`}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
+            {label}
           </button>
-          <button
-            onClick={onToggleCollapse}
-            aria-label="Toggle session drawer"
-            title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            className="grid min-h-11 min-w-11 place-items-center rounded text-foreground transition-colors hover:bg-secondary sm:min-h-8 sm:min-w-8"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              {sidebarCollapsed ? (
-                <polyline points="9 18 15 12 9 6" />
-              ) : (
-                <polyline points="15 18 9 12 15 6" />
-              )}
-            </svg>
-          </button>
-        </div>
-
-        {/* Separator */}
-        <div className="hidden h-6 w-px shrink-0 bg-border sm:block" />
-
-        {/* Alert pills */}
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
-          {actionable.length === 0 ? (
-            <span className="text-xs text-muted-foreground">NO ALERTS</span>
-          ) : (
-            actionable.map((evt, i) => {
-              const config = statusConfig[evt.status]
-              if (!config) return null
-              const toolColor = toolColors[evt.tool] || 'var(--muted-foreground)'
-              const key = `${evt.tool}-${evt.session}-${evt.pane}-${i}`
-              const isExpanded = expanded === key
-
-              return (
-                <div
-                  key={key}
-                  onMouseEnter={() => setExpanded(key)}
-                  onMouseLeave={() => setExpanded(null)}
-                  className="flex items-center gap-1.5 py-1 px-2.5 rounded cursor-pointer shrink-0 animate-[alertSlideIn_0.3s_ease-out] transition-all duration-200 overflow-hidden"
-                  style={{
-                    background: config.bg || `color-mix(in oklch, ${config.color} 10%, transparent)`,
-                    border: `1px solid color-mix(in oklch, ${config.color} 25%, transparent)`,
-                    maxWidth: isExpanded ? 'min(500px, 70vw)' : 'min(220px, 42vw)',
-                  }}
-                  onClick={() => onJumpToSession(evt.host ? `${evt.host}/${evt.session}` : evt.session, evt.window, evt.pane)}
-                >
-                  <span
-                    className="w-2 h-2 rounded-full shrink-0 animate-[pulse_1.5s_ease-in-out_infinite]"
-                    style={{ background: config.color }}
-                  />
-                  <span className="text-xs font-semibold shrink-0" style={{ color: toolColor }}>
-                    {evt.tool}
-                  </span>
-                  <span className="text-xs shrink-0" style={{ color: config.color }}>
-                    {config.label}
-                  </span>
-                  <span className="text-xs text-muted-foreground shrink-0">
-                    {evt.host_name ? `${evt.host_name}:` : ''}{evt.session}
-                  </span>
-                  {(evt.window !== undefined || evt.pane) && (
-                    <span className="shrink-0 text-[10px] text-muted-foreground">
-                      {evt.window !== undefined ? `w${evt.window}` : ''}{evt.pane ? `:p${formatPane(evt.pane)}` : ''}
-                    </span>
-                  )}
-                  {isExpanded && evt.message && (
-                    <span className="overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-muted-foreground">
-                      — {evt.message}
-                    </span>
-                  )}
-                  <span
-                    onClick={(e) => { e.stopPropagation(); onDismiss(evt) }}
-                    className="text-muted-foreground text-sm leading-none shrink-0 px-0.5 hover:text-foreground"
-                  >
-                    ×
-                  </span>
-                </div>
-              )
-            })
-          )}
-        </div>
-      </div>
-
-      {/* Right: alert and navigation actions. Connection state lives in the
-          Terminal Cockpit or the exceptional global recovery notice. */}
-      <div className="flex items-center gap-2 shrink-0">
-        {actionable.length > 1 && (
-          <span
-            onClick={onDismissAll}
-            className="text-xs text-muted-foreground cursor-pointer hover:text-foreground transition-colors mr-1"
-          >
-            Clear
-          </span>
-        )}
+        ))}
+      </nav>
+      <div className="flex-1" />
+      <div className="hidden items-center md:flex">
         <button
-          onClick={onSettings}
-          aria-label="Settings"
-          title="Settings"
-          className={cn(
-            'grid min-h-11 min-w-11 place-items-center rounded transition-colors sm:min-h-8 sm:min-w-8',
-            currentView === 'settings'
-              ? 'bg-secondary text-primary'
-              : 'hover:bg-secondary text-foreground',
-          )}
+          type="button"
+          className={button}
+          onClick={onNewSession}
+          title="Nouvelle session"
+          aria-label="Nouvelle session"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-          </svg>
+          <Plus size={16} aria-hidden />
+        </button>
+        <button
+          type="button"
+          className={button}
+          onClick={onToggleCollapse}
+          title={collapseLabel}
+          aria-label={collapseLabel}
+        >
+          <PanelLeft size={16} aria-hidden />
         </button>
       </div>
+      <Menu
+        label={`Alertes (${actionable.length})`}
+        trigger={
+          <span className={`flex items-center gap-1 tabular-nums ${alertColor}`}>
+            <Bell size={16} aria-hidden />
+            {actionable.length}
+          </span>
+        }
+      >
+        <div className="max-h-[60vh] w-[min(22rem,calc(100vw-2rem))] overflow-y-auto p-2">
+          {actionable.length === 0 && <p className="p-2 text-xs text-muted-foreground">Aucune alerte</p>}
+          {actionable.map((event, index) => (
+            <div
+              key={`${event.host}-${event.session}-${event.pane}-${index}`}
+              className="flex items-start gap-1 border-b border-border py-1 last:border-0"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                className="ui-focus-ring flex min-h-11 min-w-0 flex-1 items-start gap-2 rounded p-2 text-left hover:bg-secondary"
+                onClick={() =>
+                  onJumpToSession(
+                    event.host ? `${event.host}/${event.session}` : event.session,
+                    event.window,
+                    event.pane,
+                  )
+                }
+              >
+                <StatusIcon
+                  status={event.status === 'error' ? 'error' : 'waiting'}
+                  className={event.status === 'error' ? 'text-destructive' : 'text-warning'}
+                />
+                <span className="min-w-0 text-xs">
+                  <span className="block">
+                    {event.session} · {event.tool}
+                  </span>
+                  <span className="block break-words text-muted-foreground">
+                    {event.message || (event.status === 'error' ? 'Erreur' : 'En attente')}
+                  </span>
+                  <time className="text-2xs text-muted-foreground" dateTime={event.timestamp}>
+                    {relativeTime(event.timestamp)}
+                  </time>
+                </span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="ui-focus-ring min-h-11 rounded px-2 text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => onDismiss(event)}
+              >
+                Ignorer
+              </button>
+            </div>
+          ))}
+          {actionable.length > 0 && (
+            <button
+              type="button"
+              role="menuitem"
+              className="ui-focus-ring min-h-11 w-full rounded px-2 text-left text-xs hover:bg-secondary"
+              onClick={onDismissAll}
+            >
+              Tout ignorer
+            </button>
+          )}
+        </div>
+      </Menu>
+      <button type="button" className={button} onClick={onOpenPalette} aria-label="Rechercher" title="Rechercher">
+        <Search size={16} aria-hidden />
+        <span className="hidden lg:inline">Rechercher</span>
+        <span className="hidden lg:inline">
+          <Kbd className="font-normal text-muted-foreground">
+            {formatShortcut(prefs.quick_switcher_shortcut || 'mod+k')}
+          </Kbd>
+        </span>
+      </button>
+      <button
+        type="button"
+        className={button}
+        onClick={onSettings}
+        aria-label="Réglages"
+        title="Réglages"
+        aria-current={currentView === 'settings' ? 'page' : undefined}
+      >
+        <Settings size={16} aria-hidden />
+      </button>
     </header>
   )
 }

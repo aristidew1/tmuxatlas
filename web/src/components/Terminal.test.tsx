@@ -60,10 +60,17 @@ vi.mock('../hooks/useTerminal', () => ({
 describe('Terminal workspace controls', () => {
   afterEach(cleanup)
   beforeEach(() => {
-    vi.stubGlobal('ResizeObserver', class {
-      observe() {}
-      disconnect() {}
-    })
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })),
+    )
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    )
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: {
@@ -85,23 +92,67 @@ describe('Terminal workspace controls', () => {
     terminal.searchState.loaded = false
   })
 
+  it('does not focus or enable the microphone in an embedded tile', () => {
+    render(<Terminal sessionName="one" hostId="host-a" hostLocal embedded />)
+    expect(useMicStream).toHaveBeenCalledWith(false)
+    expect(terminal.focus).not.toHaveBeenCalled()
+    expect(screen.queryByRole('toolbar', { name: 'Touches du terminal' })).not.toBeInTheDocument()
+    fireEvent.click(document.querySelector('[data-terminal-surface]')!)
+    expect(terminal.focus).toHaveBeenCalledTimes(1)
+  })
+
+  it('affiche les alertes des fenêtres et permet de les sélectionner', () => {
+    const select = vi.fn()
+    const windows = [
+      { id: 'a', session_id: 's', layout: '', index: 0, name: 'éditeur', active: true, panes: [] },
+      { id: 'b', session_id: 's', layout: '', index: 1, name: 'serveur', active: false, panes: [] },
+    ] as NonNullable<React.ComponentProps<typeof Terminal>['windows']>
+    render(
+      <Terminal
+        sessionName="une"
+        hostId="h"
+        windows={windows}
+        windowAttention={{ 1: 'waiting' }}
+        onSelectWindow={select}
+      />,
+    )
+    const tab = screen.getByRole('tab', { name: /serveur.*En attente/i })
+    fireEvent.click(tab)
+    expect(select).toHaveBeenCalledWith(1)
+  })
+
+  it('désactive la copie dans le panneau mobile et ferme après une action', () => {
+    terminal.hasSelection = false
+    render(<Terminal sessionName="une" hostId="h" />)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Plus' })[1])
+    const panel = screen.getByRole('dialog', { name: 'Actions du terminal' })
+    expect(within(panel).getByRole('button', { name: 'Copier' })).toBeDisabled()
+    fireEvent.click(within(panel).getByRole('button', { name: 'Rechercher' }))
+    expect(screen.queryByRole('dialog', { name: 'Actions du terminal' })).not.toBeInTheDocument()
+    terminal.hasSelection = true
+  })
+
   it('sends special keys and resets locked modifiers after target change', () => {
-    const view = render(<Terminal sessionName="one" hostId="host-a" />)
-    fireEvent.click(screen.getByRole('button', { name: 'Up arrow' }))
+    const view = render(<Terminal sessionName="one" hostId="host-a" hostName="host-a" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Flèche haut' }))
     expect(terminal.sendInput).toHaveBeenCalledWith('\x1b[A')
 
-    fireEvent.click(screen.getByRole('button', { name: /Control modifier: off/ }))
-    fireEvent.click(screen.getByRole('button', { name: /Control modifier: once/ }))
-    expect(screen.getByRole('button', { name: /Control modifier: locked/ })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(screen.getByRole('button', { name: /Modificateur ctrl/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Modificateur ctrl/ }))
+    expect(screen.getByRole('button', { name: /Modificateur ctrl/ })).toHaveAttribute('aria-pressed', 'true')
 
-    view.rerender(<Terminal sessionName="two" hostId="host-b" />)
-    expect(screen.getByRole('button', { name: /Control modifier: off/ })).toHaveAttribute('aria-pressed', 'false')
+    view.rerender(<Terminal sessionName="two" hostId="host-b" hostName="host-b" />)
+    expect(screen.getByRole('button', { name: /Modificateur ctrl/ })).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('reports Clipboard failures and confirms multi-line paste', async () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })),
+    )
     terminal.pasteClipboard.mockRejectedValueOnce(new Error('Clipboard permission denied.'))
-    render(<Terminal sessionName="one" hostId="host-a" />)
-    fireEvent.click(screen.getAllByRole('button', { name: 'Paste into Terminal' })[0])
+    render(<Terminal sessionName="one" hostId="host-a" hostName="host-a" />)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Coller' })[0])
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Clipboard permission denied.'))
 
     terminal.pasteClipboard.mockResolvedValueOnce({
@@ -110,42 +161,36 @@ describe('Terminal workspace controls', () => {
       text: 'one\ntwo',
       multiline: true,
     })
-    fireEvent.click(screen.getAllByRole('button', { name: 'Paste into Terminal' })[0])
+    fireEvent.click(screen.getAllByRole('button', { name: 'Coller' })[0])
     const confirmation = await screen.findByRole('alertdialog')
-    expect(confirmation).toHaveTextContent('Paste multiple lines')
-    fireEvent.click(within(confirmation).getByRole('button', { name: 'Paste into Terminal' }))
+    expect(confirmation).toHaveTextContent('Coller plusieurs lignes')
+    fireEvent.click(within(confirmation).getByRole('button', { name: 'Coller dans le terminal' }))
     expect(terminal.commitClipboardPaste).toHaveBeenCalledWith(expect.objectContaining({ text: 'one\ntwo' }))
   })
 
-  it('exposes 44px touch controls and a collapsible toolbar', () => {
+  it('exposes a single 44px mobile toolbar', () => {
     render(<Terminal sessionName="one" hostId="host-a" />)
-    const toggle = screen.getByRole('button', { name: 'Hide terminal keys' })
-    expect(toggle.className).toContain('min-h-11')
-    fireEvent.click(toggle)
-    expect(screen.queryByRole('toolbar', { name: 'Terminal keys' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Show terminal keys' })).toHaveAttribute('aria-expanded', 'false')
+    const toolbar = screen.getByRole('toolbar', { name: 'Touches du terminal' })
+    expect(toolbar.className).toContain('h-11')
+    expect(screen.getByRole('button', { name: 'Composer un message' })).toHaveAttribute('aria-expanded', 'false')
   })
 
   it('opens Search lazily and restores command actions on cleanup', async () => {
     terminal.searchState.loaded = true
     const onActions = vi.fn<(actions: TerminalCommandActions | null) => void>()
     const view = render(
-      <Terminal
-        sessionName="one"
-        hostId="host-a"
-        onCommandActionsChange={onActions}
-      />,
+      <Terminal sessionName="one" hostId="host-a" hostName="host-a" onCommandActionsChange={onActions} />,
     )
     const actions = onActions.mock.calls.find(([value]) => value)?.[0]
     expect(actions).toBeTruthy()
     act(() => actions?.openSearch())
-    expect(await screen.findByRole('search', { name: 'Search Terminal scrollback' })).toBeVisible()
+    expect(await screen.findByRole('search', { name: 'Rechercher dans le terminal' })).toBeVisible()
     expect(terminal.ensureSearchAddon).toHaveBeenCalledTimes(1)
-    fireEvent.change(screen.getByRole('searchbox', { name: 'Terminal search query' }), {
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Texte recherché' }), {
       target: { value: 'needle' },
     })
     await waitFor(() => expect(terminal.findNext).toHaveBeenCalledWith('needle', false))
-    fireEvent.click(screen.getByRole('button', { name: 'Close Terminal search' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Fermer la recherche' }))
     expect(terminal.clearSearch).toHaveBeenCalled()
     expect(terminal.focus).toHaveBeenCalled()
     view.unmount()
@@ -153,27 +198,27 @@ describe('Terminal workspace controls', () => {
   })
 
   it('offers selection-aware Terminal context actions', () => {
-    render(<Terminal sessionName="one" hostId="host-a" />)
+    render(<Terminal sessionName="one" hostId="host-a" hostName="host-a" />)
     fireEvent.contextMenu(document.querySelector('[data-terminal-surface]')!)
-    const menu = screen.getByRole('menu', { name: 'Terminal actions' })
+    const menu = screen.getByRole('menu', { name: 'Actions du terminal' })
     expect(menu).toBeVisible()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Select all' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Tout sélectionner' }))
     expect(terminal.selectAll).toHaveBeenCalled()
   })
 
   it('keeps Composer drafts isolated for same-name Sessions on different Hosts', () => {
-    const view = render(<Terminal sessionName="work" hostId="host-a" />)
-    fireEvent.click(screen.getByRole('button', { name: 'Expand Mobile Input Composer' }))
-    const firstDraft = screen.getByRole('textbox', { name: /host-a\/work/ })
+    const view = render(<Terminal sessionName="work" hostId="host-a" hostName="host-a" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Composer un message' }))
+    const firstDraft = screen.getByRole('textbox', { name: /Hôte\/work/ })
     fireEvent.change(firstDraft, { target: { value: 'draft for A' } })
 
-    view.rerender(<Terminal sessionName="work" hostId="host-b" />)
-    fireEvent.click(screen.getByRole('button', { name: 'Expand Mobile Input Composer' }))
-    expect(screen.getByRole('textbox', { name: /host-b\/work/ })).toHaveValue('')
+    view.rerender(<Terminal sessionName="work" hostId="host-b" hostName="host-b" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Composer un message' }))
+    expect(screen.getByRole('textbox', { name: /Hôte\/work/ })).toHaveValue('')
 
-    view.rerender(<Terminal sessionName="work" hostId="host-a" />)
-    fireEvent.click(screen.getByRole('button', { name: 'Expand Mobile Input Composer' }))
-    expect(screen.getByRole('textbox', { name: /host-a\/work/ })).toHaveValue('draft for A')
+    view.rerender(<Terminal sessionName="work" hostId="host-a" hostName="host-a" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Composer un message' }))
+    expect(screen.getByRole('textbox', { name: /Hôte\/work/ })).toHaveValue('draft for A')
   })
 
   it('preserves Composer drafts when the Terminal workspace remounts', () => {
@@ -187,25 +232,25 @@ describe('Terminal workspace controls', () => {
       clearDraft: (targetKey: string) => drafts.delete(targetKey),
     }
     const firstView = render(
-      <Terminal sessionName="work" hostId="host-a" terminalDrafts={terminalDrafts} />,
+      <Terminal sessionName="work" hostId="host-a" hostName="host-a" terminalDrafts={terminalDrafts} />,
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Expand Mobile Input Composer' }))
-    fireEvent.change(screen.getByRole('textbox', { name: /host-a\/work/ }), {
+    fireEvent.click(screen.getByRole('button', { name: 'Composer un message' }))
+    fireEvent.change(screen.getByRole('textbox', { name: /Hôte\/work/ }), {
       target: { value: 'survives remount' },
     })
     firstView.unmount()
 
-    render(<Terminal sessionName="work" hostId="host-a" terminalDrafts={terminalDrafts} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Expand Mobile Input Composer' }))
-    expect(screen.getByRole('textbox', { name: /host-a\/work/ })).toHaveValue('survives remount')
+    render(<Terminal sessionName="work" hostId="host-a" hostName="host-a" terminalDrafts={terminalDrafts} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Composer un message' }))
+    expect(screen.getByRole('textbox', { name: /Hôte\/work/ })).toHaveValue('survives remount')
   })
 
   it('sends the complete Composer value and only clears after success', async () => {
-    render(<Terminal sessionName="work" hostId="host-a" />)
-    fireEvent.click(screen.getByRole('button', { name: 'Expand Mobile Input Composer' }))
-    const draft = screen.getByRole('textbox', { name: /host-a\/work/ })
+    render(<Terminal sessionName="work" hostId="host-a" hostName="host-a" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Composer un message' }))
+    const draft = screen.getByRole('textbox', { name: /Hôte\/work/ })
     fireEvent.change(draft, { target: { value: ' 你好 "$HOME"\nnext ' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Send command to host-a/work' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Envoyer la commande à Hôte/work' }))
     await waitFor(() => expect(terminal.sendCommand).toHaveBeenCalledWith(' 你好 "$HOME"\nnext '))
     expect(draft).toHaveValue('')
 
@@ -213,15 +258,15 @@ describe('Terminal workspace controls', () => {
       throw new Error('Terminal target changed.')
     })
     fireEvent.change(draft, { target: { value: 'keep me' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Send command to host-a/work' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Envoyer la commande à Hôte/work' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Terminal target changed.')
     expect(draft).toHaveValue('keep me')
   })
 
   it('does not submit Ctrl+Enter while IME composition is active', () => {
-    render(<Terminal sessionName="work" hostId="host-a" />)
-    fireEvent.click(screen.getByRole('button', { name: 'Expand Mobile Input Composer' }))
-    const draft = screen.getByRole('textbox', { name: /host-a\/work/ })
+    render(<Terminal sessionName="work" hostId="host-a" hostName="host-a" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Composer un message' }))
+    const draft = screen.getByRole('textbox', { name: /Hôte\/work/ })
     fireEvent.change(draft, { target: { value: '中文' } })
     fireEvent.compositionStart(draft)
     fireEvent.keyDown(draft, { key: 'Enter', ctrlKey: true, isComposing: true })
@@ -233,6 +278,12 @@ describe('Terminal workspace controls', () => {
 })
 
 describe('Terminal microphone', () => {
+  beforeEach(() =>
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })),
+    ),
+  )
   beforeEach(() => {
     mic.available = false
     mic.state = 'off'
@@ -259,10 +310,10 @@ describe('Terminal microphone', () => {
     mic.available = true
     mic.state = 'on'
     const { rerender } = render(<Terminal sessionName="s" hostId="h" hostLocal />)
-    fireEvent.click(screen.getByRole('button', { name: 'Turn off microphone' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Désactiver le micro' }))
     expect(mic.toggle).toHaveBeenCalledTimes(1)
     rerender(<Terminal sessionName="s" hostId="h" hostLocal zenMode onToggleZen={() => {}} />)
-    expect(screen.getByRole('button', { name: 'Turn off microphone' }).textContent).toContain('Mic on')
+    expect(screen.getByRole('button', { name: 'Désactiver le micro' }).textContent).toContain('Micro activé')
   })
 
   it('shows microphone errors', () => {
@@ -274,9 +325,15 @@ describe('Terminal microphone', () => {
 })
 
 describe('Claude talk button', () => {
-  const talk = () => screen.getByRole('button', { name: 'Talk to Claude' })
-  const stop = () => screen.getByRole('button', { name: 'Stop talking and edit the prompt' })
-  const send = () => screen.getByRole('button', { name: 'Stop talking and send the prompt' })
+  beforeEach(() =>
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })),
+    ),
+  )
+  const talk = () => screen.getByRole('button', { name: 'Talk : parler à Claude' })
+  const stop = () => screen.getByRole('button', { name: 'Arrêter la dictée et modifier le texte' })
+  const send = () => screen.getByRole('button', { name: 'Arrêter la dictée et envoyer le texte' })
 
   let slot: HTMLElement
 
@@ -295,7 +352,7 @@ describe('Claude talk button', () => {
   it('renders in the status bar slot rather than the Terminal toolbar', () => {
     render(<Terminal sessionName="s" hostId="h" hostLocal talkSlot={slot} claudeActive />)
     expect(slot).toContainElement(talk())
-    expect(screen.getByRole('toolbar', { name: 'Terminal controls' })).not.toContainElement(talk())
+    expect(document.querySelector('.terminal-cockpit')).not.toContainElement(talk())
   })
 
   it('shows Stop and Send while holding, and Stop leaves the transcript in the prompt', () => {
@@ -306,7 +363,7 @@ describe('Claude talk button', () => {
     expect(terminal.setVoiceHold).toHaveBeenCalledTimes(1)
     expect(terminal.setVoiceHold).toHaveBeenLastCalledWith(true)
     expect(terminal.focus).toHaveBeenCalled()
-    expect(screen.queryByRole('button', { name: 'Talk to Claude' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Talk : parler à Claude' })).toBeNull()
     expect(slot).toContainElement(send())
     fireEvent.click(stop())
     expect(terminal.setVoiceHold).toHaveBeenCalledTimes(2)
@@ -317,7 +374,10 @@ describe('Claude talk button', () => {
 
   describe('Send', () => {
     const footer = (text: string) => terminal.readScreen.mockReturnValue(['> hello', `  auto mode on   ${text}`])
-    const advance = (ms: number) => act(() => { vi.advanceTimersByTime(ms) })
+    const advance = (ms: number) =>
+      act(() => {
+        vi.advanceTimersByTime(ms)
+      })
     const startListening = () => {
       render(<Terminal sessionName="s" hostId="h" hostLocal talkSlot={slot} claudeActive />)
       fireEvent.click(talk())
@@ -330,7 +390,9 @@ describe('Claude talk button', () => {
       terminal.sendRawInput.mockClear()
       terminal.readScreen.mockReset().mockReturnValue([])
     })
-    afterEach(() => { vi.useRealTimers() })
+    afterEach(() => {
+      vi.useRealTimers()
+    })
 
     it('presses Enter only once Claude has finished the transcript', () => {
       startListening()
@@ -349,8 +411,8 @@ describe('Claude talk button', () => {
     })
 
     it.each([
-      ['Claude reports a failure', 'No speech detected.', 'could not transcribe'],
-      ['transcription never ends', 'Voice: processing…', 'did not finish'],
+      ['Claude reports a failure', 'No speech detected.', 'n’a pas pu transcrire'],
+      ['transcription never ends', 'Voice: processing…', 'n’a pas terminé'],
     ])('sends nothing when %s', (_name, text, message) => {
       startListening()
       fireEvent.click(send())
@@ -367,7 +429,7 @@ describe('Claude talk button', () => {
       fireEvent.click(send())
       advance(1_000)
       expect(terminal.sendRawInput).not.toHaveBeenCalled()
-      expect(screen.getByRole('alert').textContent).toContain('not listening')
+      expect(screen.getByRole('alert').textContent).toContain('n’écoutait pas')
     })
 
     it('ignores words on screen above the footer', () => {
@@ -397,7 +459,9 @@ describe('Claude talk button', () => {
     mic.state = 'on'
     view.rerender(<Terminal sessionName="other" hostId="h" hostLocal talkSlot={slot} claudeActive />)
     fireEvent.click(talk())
-    view.rerender(<Terminal sessionName="other" hostId="h" hostLocal talkSlot={null} claudeActive zenMode onToggleZen={() => {}} />)
+    view.rerender(
+      <Terminal sessionName="other" hostId="h" hostLocal talkSlot={null} claudeActive zenMode onToggleZen={() => {}} />,
+    )
     expect(terminal.setVoiceHold).toHaveBeenLastCalledWith(false)
   })
 
@@ -417,7 +481,9 @@ describe('Claude talk button', () => {
     const view = render(<Terminal sessionName="s" hostId="h" hostLocal talkSlot={slot} claudeActive />)
     expect(talk()).toBeDisabled()
     mic.state = 'on'
-    view.rerender(<Terminal sessionName="s" hostId="h" hostLocal talkSlot={slot} claudeActive connectionState="reconnecting" />)
+    view.rerender(
+      <Terminal sessionName="s" hostId="h" hostLocal talkSlot={slot} claudeActive connectionState="reconnecting" />,
+    )
     expect(talk()).toBeDisabled()
   })
 })

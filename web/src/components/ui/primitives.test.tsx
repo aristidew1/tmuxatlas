@@ -52,7 +52,7 @@ describe('semantic theme contracts', () => {
   })
 
   it('uses a readable UI stack and reserves monospace for technical content', () => {
-    expect(indexCss).toContain('--font-sans: ui-sans-serif')
+    expect(indexCss).toContain("--font-sans: 'Geist Variable', ui-sans-serif")
     expect(indexCss).toContain("--font-mono: 'JetBrains Mono'")
     expect(indexCss).toContain("--font-display: 'VT323'")
   })
@@ -87,7 +87,11 @@ describe('basic shared controls', () => {
     expect(onClick).toHaveBeenCalledTimes(1)
 
     cleanup()
-    render(<Button loading loadingLabel="Connecting">Reconnect</Button>)
+    render(
+      <Button loading loadingLabel="Connecting">
+        Reconnect
+      </Button>,
+    )
     expect(screen.getByRole('button', { name: 'Connecting' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Connecting' })).toHaveAttribute('aria-busy', 'true')
   })
@@ -131,7 +135,9 @@ describe('accessible overlays', () => {
     const [open, setOpen] = useState(false)
     return (
       <>
-        <button type="button" onClick={() => setOpen(true)}>Open preferences</button>
+        <button type="button" onClick={() => setOpen(true)}>
+          Open preferences
+        </button>
         <Dialog
           open={open}
           onOpenChange={setOpen}
@@ -160,7 +166,7 @@ describe('accessible overlays', () => {
     const save = screen.getByRole('button', { name: 'Save' })
     save.focus()
     await user.tab()
-    expect(screen.getByRole('button', { name: 'Close' })).toHaveFocus()
+    expect(screen.getByRole('button', { name: 'Fermer' })).toHaveFocus()
 
     await user.keyboard('{Escape}')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
@@ -203,10 +209,7 @@ describe('feedback and page states', () => {
   function ToastHarness() {
     const { toast } = useToast()
     return (
-      <button
-        type="button"
-        onClick={() => toast({ title: 'Connected', description: 'PTY is ready', duration: 0 })}
-      >
+      <button type="button" onClick={() => toast({ title: 'Connected', description: 'PTY is ready', duration: 0 })}>
         Notify
       </button>
     )
@@ -222,7 +225,7 @@ describe('feedback and page states', () => {
     await user.click(screen.getByRole('button', { name: 'Notify' }))
     expect(screen.getByRole('status')).toHaveTextContent('Connected')
     expect(screen.getByRole('status')).toHaveTextContent('PTY is ready')
-    await user.click(screen.getByRole('button', { name: 'Dismiss notification' }))
+    await user.click(screen.getByRole('button', { name: 'Ignorer la notification' }))
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 

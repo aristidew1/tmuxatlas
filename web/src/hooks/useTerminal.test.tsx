@@ -75,6 +75,7 @@ vi.mock('@xterm/addon-search', () => ({
 vi.mock('@xterm/xterm', () => {
   type Listener<T> = (value: T) => void
   class FakeTerminal {
+    unicode = { register: vi.fn(), activeVersion: '6' }
     cols = 80
     rows = 24
     options: Record<string, any>
@@ -223,7 +224,10 @@ beforeEach(() => {
 describe('useTerminal lifecycle and guarded input', () => {
   it('leaves clipboard shortcuts to the browser instead of sending Ctrl-V to the PTY', async () => {
     const { result, unmount } = renderHook(() => useTerminal('work', 'host-a'))
-    act(() => { result.current.connect(terminalContainer()); FakeWebSocket.sockets[0].open() })
+    act(() => {
+      result.current.connect(terminalContainer())
+      FakeWebSocket.sockets[0].open()
+    })
     const handle = xtermState.terminals[0].customKeyHandler!
     for (const options of [{ ctrlKey: true }, { ctrlKey: true, shiftKey: true }, { metaKey: true }]) {
       const event = new KeyboardEvent('keydown', { key: 'v', cancelable: true, ...options })
@@ -231,24 +235,32 @@ describe('useTerminal lifecycle and guarded input', () => {
       expect(event.defaultPrevented).toBe(false)
     }
     expect(handle(new KeyboardEvent('keydown', { key: 'v', ctrlKey: true, altKey: true }))).toBe(true)
-    await act(async () => { await Promise.resolve() })
+    await act(async () => {
+      await Promise.resolve()
+    })
     unmount()
   })
 
   it('sends a pasted clipboard image and reports the server result', async () => {
     const { result } = renderHook(() => useTerminal('work', 'host-a'))
     const container = terminalContainer()
-    act(() => { result.current.connect(container); FakeWebSocket.sockets[0].open() })
+    act(() => {
+      result.current.connect(container)
+      FakeWebSocket.sockets[0].open()
+    })
     const socket = FakeWebSocket.sockets[0]
     socket.send.mockClear()
     const blob = { size: 3, arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer }
     const event = new Event('paste', { bubbles: true, cancelable: true })
     Object.defineProperty(event, 'clipboardData', { value: { items: [{ type: 'image/png', getAsFile: () => blob }] } })
-    await act(async () => { container.dispatchEvent(event); await Promise.resolve() })
+    await act(async () => {
+      container.dispatchEvent(event)
+      await Promise.resolve()
+    })
     expect(event.defaultPrevented).toBe(true)
     expect(socket.send).toHaveBeenCalledWith(JSON.stringify({ type: 'image', data: 'AQID', final: true }))
     act(() => socket.message(JSON.stringify({ type: 'image-result', error: '' })))
-    expect(result.current.imagePasteStatus).toBe('Image pasted into Terminal.')
+    expect(result.current.imagePasteStatus).toBe('Image collée dans le terminal.')
   })
 
   it('synchronizes a deferred fit when the socket becomes writable', () => {
@@ -261,11 +273,13 @@ describe('useTerminal lifecycle and guarded input', () => {
     xtermState.terminals[0].rows = 52
     act(() => FakeWebSocket.sockets[0].open())
 
-    expect(FakeWebSocket.sockets[0].send).toHaveBeenCalledWith(JSON.stringify({
-      type: 'resize',
-      cols: 164,
-      rows: 52,
-    }))
+    expect(FakeWebSocket.sockets[0].send).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'resize',
+        cols: 164,
+        rows: 52,
+      }),
+    )
     expect(result.current.ptyState).toBe('connected')
   })
 
@@ -315,7 +329,7 @@ describe('useTerminal lifecycle and guarded input', () => {
     expect(result.current.searchState).toMatchObject({
       loaded: false,
       loading: false,
-      error: 'Search chunk unavailable.',
+      error: 'Impossible de charger la recherche.',
     })
 
     await act(async () => {
@@ -346,9 +360,7 @@ describe('useTerminal lifecycle and guarded input', () => {
     input.cycle('alt')
     input.cycle('alt')
     act(() => result.current.sendCommand('locked'))
-    const lastSend = FakeWebSocket.sockets[0].send.mock.calls[
-      FakeWebSocket.sockets[0].send.mock.calls.length - 1
-    ][0]
+    const lastSend = FakeWebSocket.sockets[0].send.mock.calls[FakeWebSocket.sockets[0].send.mock.calls.length - 1][0]
     expect(new TextDecoder().decode(lastSend)).toBe('locked\r')
     expect(input.snapshot().alt).toBe('locked')
   })
@@ -366,14 +378,13 @@ describe('useTerminal lifecycle and guarded input', () => {
       result.current.reconnect()
       FakeWebSocket.sockets[1].open()
     })
-    expect(() => result.current.sendRawInput(new Uint8Array([1]), stale)).toThrow(/target changed/i)
-    expect(FakeWebSocket.sockets[1].send.mock.calls
-      .filter(([frame]) => typeof frame !== 'string')).toHaveLength(0)
+    expect(() => result.current.sendRawInput(new Uint8Array([1]), stale)).toThrow(/cible du terminal a changé/i)
+    expect(FakeWebSocket.sockets[1].send.mock.calls.filter(([frame]) => typeof frame !== 'string')).toHaveLength(0)
 
     FakeWebSocket.sockets[1].send.mockImplementationOnce(() => {
       throw new Error('send failed')
     })
-    expect(() => result.current.sendCommand('keep draft')).toThrow(/rejected/i)
+    expect(() => result.current.sendCommand('keep draft')).toThrow(/refusé/i)
     expect(input.snapshot().ctrl).toBe('once')
   })
 
@@ -383,7 +394,7 @@ describe('useTerminal lifecycle and guarded input', () => {
     const { result } = renderHook(() => useTerminal('work', 'host-a', input))
     act(() => result.current.connect(terminalContainer()))
 
-    expect(() => result.current.sendCommand('not yet')).toThrow(/not connected/i)
+    expect(() => result.current.sendCommand('not yet')).toThrow(/déconnecté/i)
     expect(FakeWebSocket.sockets[0].send).not.toHaveBeenCalled()
     expect(input.snapshot().ctrl).toBe('once')
   })
@@ -427,17 +438,15 @@ describe('useTerminal lifecycle and guarded input', () => {
     })
 
     const paste = result.current.pasteClipboard()
-    const rejection = expect(paste).rejects.toThrow(/target changed/i)
+    const rejection = expect(paste).rejects.toThrow(/cible du terminal a changé/i)
     act(() => {
       result.current.reconnect()
       FakeWebSocket.sockets[1].open()
       resolveRead('must not leak')
     })
     await rejection
-    expect(FakeWebSocket.sockets[0].send.mock.calls
-      .filter(([frame]) => typeof frame !== 'string')).toHaveLength(0)
-    expect(FakeWebSocket.sockets[1].send.mock.calls
-      .filter(([frame]) => typeof frame !== 'string')).toHaveLength(0)
+    expect(FakeWebSocket.sockets[0].send.mock.calls.filter(([frame]) => typeof frame !== 'string')).toHaveLength(0)
+    expect(FakeWebSocket.sockets[1].send.mock.calls.filter(([frame]) => typeof frame !== 'string')).toHaveLength(0)
   })
 
   it('latches scrollback while output arrives and resumes at the bottom', () => {
@@ -457,10 +466,9 @@ describe('useTerminal lifecycle and guarded input', () => {
   })
 
   it('isolates captures for same-name sessions on different hosts', () => {
-    const { result, rerender } = renderHook(
-      ({ host }) => useTerminal('work', host),
-      { initialProps: { host: 'host-a' } },
-    )
+    const { result, rerender } = renderHook(({ host }) => useTerminal('work', host), {
+      initialProps: { host: 'host-a' },
+    })
     act(() => {
       result.current.connect(terminalContainer())
       FakeWebSocket.sockets[0].open()
@@ -468,6 +476,6 @@ describe('useTerminal lifecycle and guarded input', () => {
     const capture = result.current.captureConnection()!
     expect(capture.targetKey).toBe(terminalTargetKey('host-a', 'work'))
     rerender({ host: 'host-b' })
-    expect(() => result.current.sendRawInput(new Uint8Array([1]), capture)).toThrow(/target changed/i)
+    expect(() => result.current.sendRawInput(new Uint8Array([1]), capture)).toThrow(/cible du terminal a changé/i)
   })
 })

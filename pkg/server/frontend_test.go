@@ -137,3 +137,16 @@ func TestFrontendHandlerServesSPARoutes(t *testing.T) {
 		})
 	}
 }
+
+func TestFrontendHandlerServesShellForSPAPaths(t *testing.T) {
+	t.Parallel()
+	handler := testFrontendHandler()
+	for _, requestPath := range []string{"/monitoring", "/wall", "/session/local/work", "/session/local/my%20session"} {
+		request := httptest.NewRequest(http.MethodGet, requestPath, nil)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "TmuxAtlas test shell") {
+			t.Fatalf("%s: status=%d body=%q", requestPath, response.Code, response.Body.String())
+		}
+	}
+}

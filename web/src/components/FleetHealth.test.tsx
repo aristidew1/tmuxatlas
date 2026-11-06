@@ -10,24 +10,32 @@ describe('FleetHealthView', () => {
       configurable: true,
       value: { writeText },
     })
-    renderStrict(<FleetHealthView records={[
-      {
-        facts: { host_id: 'host-a', display_name: 'duplicate', version: 'v1' },
-        summary: 'version-behind',
-        reasons: [{
-          code: 'version-behind', severity: 2, message: 'Behind.',
-          remediation: 'tmuxatlas update',
-        }],
-      },
-      {
-        facts: { host_id: 'host-b', display_name: 'duplicate', version: 'v2' },
-        summary: 'offline',
-        reasons: [{ code: 'offline', severity: 4, message: 'Offline.' }],
-      },
-    ]} />)
+    renderStrict(
+      <FleetHealthView
+        records={[
+          {
+            facts: { host_id: 'host-a', display_name: 'duplicate', version: 'v1' },
+            summary: 'version-behind',
+            reasons: [
+              {
+                code: 'version-behind',
+                severity: 2,
+                message: 'Behind.',
+                remediation: 'tmuxatlas update',
+              },
+            ],
+          },
+          {
+            facts: { host_id: 'host-b', display_name: 'duplicate', version: 'v2' },
+            summary: 'offline',
+            reasons: [{ code: 'offline', severity: 4, message: 'Offline.' }],
+          },
+        ]}
+      />,
+    )
     expect(screen.getAllByText('duplicate')).toHaveLength(2)
     expect(document.querySelectorAll('[data-host-id]')).toHaveLength(2)
-    fireEvent.click(screen.getByLabelText('Copy remediation for host-a'))
+    fireEvent.click(screen.getAllByLabelText('Copier la solution pour duplicate')[0])
     expect(writeText).toHaveBeenCalledWith('tmuxatlas update')
   })
 })

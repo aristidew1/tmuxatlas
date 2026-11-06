@@ -1,3 +1,5 @@
+import { CircleAlert, LoaderCircle } from 'lucide-react'
+import { Button } from './ui'
 import type { ConnectionState } from '../state/types'
 
 export function StateConnectionNotice({
@@ -10,34 +12,36 @@ export function StateConnectionNotice({
   if (state === 'ready') return null
 
   const labels: Record<ConnectionState, string> = {
-    connecting: 'Connecting to Hub…',
-    rehydrating: 'Synchronizing current Hub state…',
+    connecting: 'Connexion au Hub…',
+    rehydrating: 'Synchronisation du Hub…',
     ready: '',
-    reconnecting: 'Connection lost. Reconnecting…',
-    'auth-required': 'Your login session has expired.',
-    'reload-required': 'TmuxAtlas was updated. Reload this page to continue.',
+    reconnecting: 'Connexion perdue. Reconnexion…',
+    'auth-required': 'Votre session de connexion a expiré.',
+    'reload-required': 'Atlas a été mis à jour. Rechargez cette page pour continuer.',
   }
-  const action = state === 'reload-required'
-    ? () => window.location.reload()
-    : state === 'auth-required'
-      ? onAuthRequired
-      : undefined
+  const action =
+    state === 'reload-required'
+      ? () => window.location.reload()
+      : state === 'auth-required'
+        ? onAuthRequired
+        : undefined
 
   return (
     <div
       role="status"
       aria-live="polite"
-      className="absolute top-2 left-1/2 z-[9999] flex min-h-11 -translate-x-1/2 items-center gap-3 rounded border border-border bg-background/95 px-4 py-2 text-sm shadow-lg"
+      className="absolute top-2 left-1/2 z-[9999] flex min-h-11 -translate-x-1/2 items-center gap-3 atlas-surface max-w-[calc(100%-2rem)] rounded-lg px-4 py-2 text-sm shadow-lg"
     >
+      {state === 'auth-required' || state === 'reload-required' ? (
+        <CircleAlert size={16} aria-hidden="true" />
+      ) : (
+        <LoaderCircle size={16} aria-hidden="true" />
+      )}
       <span>{labels[state]}</span>
       {action && (
-        <button
-          type="button"
-          onClick={action}
-          className="min-h-9 rounded border border-primary/50 px-3 text-primary"
-        >
-          {state === 'reload-required' ? 'Reload' : 'Sign in'}
-        </button>
+        <Button variant="ghost" onClick={action} className="shrink-0">
+          {state === 'reload-required' ? 'Recharger' : 'Se connecter'}
+        </Button>
       )}
     </div>
   )

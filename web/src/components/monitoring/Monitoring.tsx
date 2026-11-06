@@ -1,3 +1,4 @@
+import { Check, Circle, TriangleAlert, X } from 'lucide-react'
 import { useMemo, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { MiniTrend, TimeSeriesChart } from './TimeSeriesChart'
 import { useMonitor } from './useMonitor'
@@ -35,24 +36,25 @@ const toneColor: Record<Tone, string> = {
   critical: 'var(--destructive)',
   neutral: 'var(--muted-foreground)',
 }
-const toneIcon: Record<Tone, string> = { ok: '✓', warning: '▲', critical: '✕', neutral: '●' }
+const toneIcon = { ok: Check, warning: TriangleAlert, critical: X, neutral: Circle }
 
 function StatusBadge({ tone, label }: { tone: Tone; label: string }) {
+  const Icon = toneIcon[tone]
   // Healthy is the expected state: it stays quiet so problems stand out.
   if (tone === 'ok') {
     return (
-      <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] text-muted-foreground">
-        <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: toneColor.ok }} />
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-2xs text-muted-foreground">
+        <Icon size={14} aria-hidden="true" />
         {label}
       </span>
     )
   }
   return (
     <span
-      className="inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-[1px] text-[11px] font-medium"
+      className="inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-[1px] text-2xs font-medium"
       style={{ color: toneColor[tone], background: `color-mix(in oklch, ${toneColor[tone]} 12%, transparent)` }}
     >
-      <span aria-hidden>{toneIcon[tone]}</span>
+      <Icon size={14} aria-hidden="true" />
       {label}
     </span>
   )
@@ -67,13 +69,24 @@ function Meter({ value, tone }: { value: number; tone: Tone }) {
     <div className="h-1 w-full overflow-hidden rounded-full bg-secondary" role="presentation">
       <div
         className="h-full rounded-full transition-[width] duration-300"
-        style={{ width: `${Math.min(100, Math.max(0, value))}%`, background: tone === 'warning' || tone === 'critical' ? toneColor[tone] : A }}
+        style={{
+          width: `${Math.min(100, Math.max(0, value))}%`,
+          background: tone === 'warning' || tone === 'critical' ? toneColor[tone] : A,
+        }}
       />
     </div>
   )
 }
 
-function Kpi({ label, value, tone = 'neutral', badge, meter, facts, children }: {
+function Kpi({
+  label,
+  value,
+  tone = 'neutral',
+  badge,
+  meter,
+  facts,
+  children,
+}: {
   label: string
   value: string
   tone?: Tone
@@ -84,7 +97,7 @@ function Kpi({ label, value, tone = 'neutral', badge, meter, facts, children }: 
 }) {
   const alerting = tone === 'warning' || tone === 'critical'
   return (
-    <div className="flex min-w-0 flex-col gap-2 rounded-lg border border-border bg-card p-3 font-normal">
+    <div className="flex min-w-0 flex-col gap-2 atlas-surface rounded-lg p-3 font-normal">
       <div className="flex min-h-5 items-center justify-between gap-2 text-xs text-muted-foreground">
         <span className="truncate">{label}</span>
         {alerting && <StatusBadge tone={tone} label={badge ?? (tone === 'critical' ? 'Critique' : 'Élevé')} />}
@@ -92,7 +105,7 @@ function Kpi({ label, value, tone = 'neutral', badge, meter, facts, children }: 
       <div className="text-2xl font-semibold leading-none text-foreground">{value}</div>
       {facts && (meter !== undefined ? <Meter value={meter} tone={tone} /> : <div aria-hidden className="h-1" />)}
       {facts && (
-        <dl className="flex flex-col gap-1 text-[11px]">
+        <dl className="flex flex-col gap-1 text-2xs">
           {facts.map(([name, fact]) => (
             <div key={name} className="flex items-baseline justify-between gap-2">
               <dt className="truncate text-muted-foreground">{name}</dt>
@@ -101,7 +114,7 @@ function Kpi({ label, value, tone = 'neutral', badge, meter, facts, children }: 
           ))}
         </dl>
       )}
-      {children && <div className="text-[11px] leading-relaxed text-muted-foreground">{children}</div>}
+      {children && <div className="text-2xs leading-relaxed text-muted-foreground">{children}</div>}
     </div>
   )
 }
@@ -114,15 +127,28 @@ function CoreStrip({ cores }: { cores: number[] }) {
       aria-label={`Charge par cœur : ${cores.map(c => `${Math.round(c)} %`).join(', ')}`}
     >
       {cores.map((c, i) => (
-        <div key={i} className="flex h-full flex-1 flex-col justify-end overflow-hidden rounded-[2px] bg-secondary" title={`Cœur ${i} : ${formatPercent(c)}`}>
-          <div style={{ height: `max(1px, ${c}%)`, background: c >= 90 ? toneColor.critical : c >= 70 ? toneColor.warning : A }} />
+        <div
+          key={i}
+          className="flex h-full flex-1 flex-col justify-end overflow-hidden rounded-[2px] bg-secondary"
+          title={`Cœur ${i} : ${formatPercent(c)}`}
+        >
+          <div
+            style={{
+              height: `max(1px, ${c}%)`,
+              background: c >= 90 ? toneColor.critical : c >= 70 ? toneColor.warning : A,
+            }}
+          />
         </div>
       ))}
     </div>
   )
 }
 
-const severityTone: Record<MonitorAlert['severity'], Tone> = { critical: 'critical', warning: 'warning', info: 'neutral' }
+const severityTone: Record<MonitorAlert['severity'], Tone> = {
+  critical: 'critical',
+  warning: 'warning',
+  info: 'neutral',
+}
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false)
@@ -148,10 +174,10 @@ function CopyButton({ text }: { text: string }) {
     <button
       type="button"
       onClick={copy}
-      className="shrink-0 rounded border border-border px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="shrink-0 rounded border border-border px-2 py-0.5 text-2xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       aria-label={copied ? 'Commande copiée' : 'Copier la commande'}
     >
-      {copied ? 'Copié ✓' : 'Copier'}
+      {copied ? 'Copié' : 'Copier'}
     </button>
   )
 }
@@ -166,7 +192,7 @@ function AlertDetails({ alert, id }: { alert: MonitorAlert; id: string }) {
         <dl className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2 xl:grid-cols-3">
           {facts.map(f => (
             <div key={f.label} className="flex min-w-0 flex-col">
-              <dt className="text-[11px] text-muted-foreground">{f.label}</dt>
+              <dt className="text-2xs text-muted-foreground">{f.label}</dt>
               <dd className="break-words text-foreground">{f.value}</dd>
             </div>
           ))}
@@ -182,10 +208,15 @@ function AlertDetails({ alert, id }: { alert: MonitorAlert; id: string }) {
         <div className="grid gap-3 lg:grid-cols-2">
           {lists.map(l => (
             <div key={l.title} className="min-w-0">
-              <h5 className="mb-1 text-[11px] font-medium text-muted-foreground">{l.title}</h5>
-              <ul className="max-h-56 overflow-auto rounded-md border border-border/60 bg-background/60 text-[11px]">
+              <h5 className="mb-1 text-2xs font-medium text-muted-foreground">{l.title}</h5>
+              <ul className="max-h-56 overflow-auto rounded-md border border-border/60 bg-background/60 text-2xs">
                 {l.items.map((item, k) => (
-                  <li key={k} className="break-words border-b border-border/40 px-2.5 py-1 text-foreground last:border-0">{item}</li>
+                  <li
+                    key={k}
+                    className="break-words border-b border-border/40 px-2.5 py-1 text-foreground last:border-0"
+                  >
+                    {item}
+                  </li>
                 ))}
               </ul>
             </div>
@@ -194,14 +225,16 @@ function AlertDetails({ alert, id }: { alert: MonitorAlert; id: string }) {
       )}
       {commands.length > 0 && (
         <div className="flex flex-col gap-2">
-          <h5 className="text-[11px] font-medium text-muted-foreground">Commandes utiles</h5>
+          <h5 className="text-2xs font-medium text-muted-foreground">Commandes utiles</h5>
           {commands.map(c => (
             <div key={c.label} className="min-w-0">
               <div className="mb-1 flex items-center gap-2">
-                <span className="text-[11px] text-muted-foreground">{c.label}</span>
-                <span className="ml-auto"><CopyButton text={c.command} /></span>
+                <span className="text-2xs text-muted-foreground">{c.label}</span>
+                <span className="ml-auto">
+                  <CopyButton text={c.command} />
+                </span>
               </div>
-              <pre className="overflow-x-auto whitespace-pre rounded-md border border-border/60 bg-background px-2.5 py-1.5 text-[11px] text-foreground">
+              <pre className="overflow-x-auto whitespace-pre rounded-md border border-border/60 bg-background px-2.5 py-1.5 text-2xs text-foreground">
                 <code>{c.command}</code>
               </pre>
             </div>
@@ -216,18 +249,31 @@ function hasDetails(a: MonitorAlert) {
   return Boolean(a.facts?.length || a.lists?.length || a.commands?.length || a.advice)
 }
 
-function AlertRow({ alert, id, open, onToggle }: { alert: MonitorAlert; id: string; open: boolean; onToggle: () => void }) {
+function AlertRow({
+  alert,
+  id,
+  open,
+  onToggle,
+}: {
+  alert: MonitorAlert
+  id: string
+  open: boolean
+  onToggle: () => void
+}) {
   const tone = severityTone[alert.severity]
   const expandable = hasDetails(alert)
   const expanded = expandable && open
   const header = (
     <>
-      <StatusBadge tone={tone} label={alert.severity === 'critical' ? 'Critique' : alert.severity === 'warning' ? 'Attention' : 'Info'} />
+      <StatusBadge
+        tone={tone}
+        label={alert.severity === 'critical' ? 'Critique' : alert.severity === 'warning' ? 'Attention' : 'Info'}
+      />
       <span className="font-medium text-foreground">{alert.title}</span>
       {alert.detail && <span className="text-muted-foreground">{alert.detail}</span>}
       {expandable && (
-        <span className="ml-auto whitespace-nowrap text-[11px] text-muted-foreground">
-          {expanded ? 'Masquer ▴' : 'Détails ▾'}
+        <span className="ml-auto whitespace-nowrap text-2xs text-muted-foreground">
+          {expanded ? 'Masquer' : 'Détails'}
         </span>
       )}
     </>
@@ -261,16 +307,19 @@ function Alerts({ alerts }: { alerts: MonitorAlert[] }) {
     return (
       <div className="mb-4 flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-lg border border-border bg-card px-3 py-2 text-xs font-normal">
         <StatusBadge tone="ok" label="Tout va bien" />
-        <span className="text-muted-foreground">Aucun problème détecté sur les ressources, services, tâches et sites.</span>
+        <span className="text-muted-foreground">
+          Aucun problème détecté sur les ressources, services, tâches et sites.
+        </span>
       </div>
     )
   }
-  const toggle = (key: string) => setOpen(prev => {
-    const next = new Set(prev)
-    if (next.has(key)) next.delete(key)
-    else next.add(key)
-    return next
-  })
+  const toggle = (key: string) =>
+    setOpen(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
   return (
     <ul className="mb-4 flex flex-col gap-1.5" aria-label="Alertes">
       {alerts.map((a, i) => {
@@ -302,7 +351,12 @@ function onRovingKey(e: KeyboardEvent<HTMLElement>, count: number, index: number
   e.currentTarget.querySelectorAll('button')[next]?.focus()
 }
 
-function Segmented<T extends string>({ value, options, onChange, label }: {
+function Segmented<T extends string>({
+  value,
+  options,
+  onChange,
+  label,
+}: {
   value: T
   options: { value: T; label: string }[]
   onChange: (value: T) => void
@@ -324,8 +378,10 @@ function Segmented<T extends string>({ value, options, onChange, label }: {
           aria-checked={value === o.value}
           tabIndex={value === o.value ? 0 : -1}
           onClick={() => onChange(o.value)}
-          className={`min-h-7 whitespace-nowrap rounded px-2.5 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-            value === o.value ? 'bg-card text-foreground shadow-[var(--elevation-sm)]' : 'text-muted-foreground hover:text-foreground'
+          className={`min-h-7 whitespace-nowrap rounded px-2.5 text-2xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+            value === o.value
+              ? 'bg-card text-foreground shadow-[var(--elevation-sm)]'
+              : 'text-muted-foreground hover:text-foreground'
           }`}
         >
           {o.label}
@@ -337,7 +393,13 @@ function Segmented<T extends string>({ value, options, onChange, label }: {
 
 const NUM = 'text-right tabular-nums'
 
-function Table({ label, head, numeric = [], children, empty }: {
+function Table({
+  label,
+  head,
+  numeric = [],
+  children,
+  empty,
+}: {
   label: string
   head: string[]
   /** Indexes of right-aligned columns. */
@@ -346,12 +408,25 @@ function Table({ label, head, numeric = [], children, empty }: {
   empty?: boolean
 }) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-border bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" tabIndex={0} role="region" aria-label={label}>
+    <div
+      className="overflow-x-auto rounded-lg border border-border bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      tabIndex={0}
+      role="region"
+      aria-label={label}
+    >
       <table className="w-full border-collapse text-left text-xs font-normal">
         <caption className="sr-only">{label}</caption>
         <thead>
-          <tr className="border-b border-border text-[11px] text-muted-foreground">
-            {head.map((h, i) => <th key={i} scope="col" className={`whitespace-nowrap px-3 py-2 font-medium ${numeric.includes(i) ? 'text-right' : ''}`}>{h}</th>)}
+          <tr className="border-b border-border text-2xs text-muted-foreground">
+            {head.map((h, i) => (
+              <th
+                key={i}
+                scope="col"
+                className={`whitespace-nowrap px-3 py-2 font-medium ${numeric.includes(i) ? 'text-right' : ''}`}
+              >
+                {h}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody className="[&>tr]:border-b [&>tr]:border-border/60 [&>tr]:transition-colors [&>tr:hover]:bg-secondary/40 [&>tr:last-child]:border-0 [&_td]:whitespace-nowrap [&_td]:px-3 [&_td]:py-2">
@@ -373,22 +448,35 @@ function serviceTone(s: MonitorService): { tone: Tone; label: string } {
 function ServicesPanel({ services, mineOnly }: { services: MonitorService[]; mineOnly: boolean }) {
   const rows = mineOnly ? services.filter(s => s.custom || s.active === 'failed') : services
   return (
-    <Table label="Services" head={['État', 'Service', 'Mémoire', 'Temps CPU', 'Redém.', 'Depuis']} numeric={[2, 3, 4]} empty={rows.length === 0}>
+    <Table
+      label="Services"
+      head={['État', 'Service', 'Mémoire', 'Temps CPU', 'Redém.', 'Depuis']}
+      numeric={[2, 3, 4]}
+      empty={rows.length === 0}
+    >
       {rows.map(s => {
         const st = serviceTone(s)
         return (
           <tr key={`${s.scope}-${s.unit}`}>
-            <td><StatusBadge tone={st.tone} label={st.label} /></td>
+            <td>
+              <StatusBadge tone={st.tone} label={st.label} />
+            </td>
             <td className="max-w-[320px]">
               <div className="flex items-center gap-1.5">
                 <span className="font-medium text-foreground">{s.unit.replace(/\.service$/, '')}</span>
-                {s.scope === 'user' && <span className="rounded border border-border px-1 text-[10px] text-muted-foreground">user</span>}
+                {s.scope === 'user' && (
+                  <span className="rounded border border-border px-1 text-2xs text-muted-foreground">utilisateur</span>
+                )}
               </div>
-              <div className="truncate text-[11px] text-muted-foreground" title={s.description}>{s.description}</div>
+              <div className="truncate text-2xs text-muted-foreground" title={s.description}>
+                {s.description}
+              </div>
             </td>
             <td className={NUM}>{s.memory ? formatBytes(s.memory) : '—'}</td>
             <td className={NUM}>{formatCpuTime(s.cpu_nanos)}</td>
-            <td className={NUM} style={{ color: s.restarts >= 3 ? toneColor.warning : undefined }}>{s.restarts}</td>
+            <td className={NUM} style={{ color: s.restarts >= 3 ? toneColor.warning : undefined }}>
+              {s.restarts}
+            </td>
             <td className="whitespace-nowrap text-muted-foreground">{s.since ? formatRelative(s.since) : '—'}</td>
           </tr>
         )
@@ -407,18 +495,38 @@ function timerTone(t: MonitorTimer): { tone: Tone; label: string } {
 function TimersPanel({ timers, mineOnly }: { timers: MonitorTimer[]; mineOnly: boolean }) {
   const rows = mineOnly ? timers.filter(t => t.custom || (t.result && t.result !== 'success')) : timers
   return (
-    <Table label="Tâches planifiées" head={['Dernier résultat', 'Tâche', 'Dernière exécution', 'Prochaine']} empty={rows.length === 0}>
+    <Table
+      label="Tâches planifiées"
+      head={['Dernier résultat', 'Tâche', 'Dernière exécution', 'Prochaine']}
+      empty={rows.length === 0}
+    >
       {rows.map(t => {
         const st = timerTone(t)
         return (
           <tr key={`${t.scope}-${t.unit}`}>
-            <td><StatusBadge tone={st.tone} label={st.label} /></td>
+            <td>
+              <StatusBadge tone={st.tone} label={st.label} />
+            </td>
             <td>
               <span className="font-medium text-foreground">{t.unit.replace(/\.timer$/, '')}</span>
-              {t.scope === 'user' && <span className="ml-1.5 rounded border border-border px-1 text-[10px] text-muted-foreground">user</span>}
+              {t.scope === 'user' && (
+                <span className="ml-1.5 rounded border border-border px-1 text-2xs text-muted-foreground">
+                  utilisateur
+                </span>
+              )}
             </td>
-            <td className="whitespace-nowrap text-muted-foreground" title={t.last ? new Date(t.last * 1000).toLocaleString('fr-FR') : undefined}>{formatRelative(t.last)}</td>
-            <td className="whitespace-nowrap text-muted-foreground" title={t.next ? new Date(t.next * 1000).toLocaleString('fr-FR') : undefined}>{formatRelative(t.next)}</td>
+            <td
+              className="whitespace-nowrap text-muted-foreground"
+              title={t.last ? new Date(t.last * 1000).toLocaleString('fr-FR') : undefined}
+            >
+              {formatRelative(t.last)}
+            </td>
+            <td
+              className="whitespace-nowrap text-muted-foreground"
+              title={t.next ? new Date(t.next * 1000).toLocaleString('fr-FR') : undefined}
+            >
+              {formatRelative(t.next)}
+            </td>
           </tr>
         )
       })}
@@ -435,22 +543,45 @@ function certTone(expires?: number): { tone: Tone; label: string } {
 
 function EndpointsPanel({ endpoints }: { endpoints: MonitorEndpoint[] }) {
   return (
-    <Table label="Sites surveillés" head={['État', 'Site', 'HTTP', 'Latence', 'Tendance 24 h', 'Dispo. 24 h', 'Certificat', 'Vérifié']} numeric={[2, 3, 5]} empty={endpoints.length === 0}>
+    <Table
+      label="Sites surveillés"
+      head={['État', 'Site', 'HTTP', 'Latence', 'Tendance 24 h', 'Dispo. 24 h', 'Certificat', 'Vérifié']}
+      numeric={[2, 3, 5]}
+      empty={endpoints.length === 0}
+    >
       {endpoints.map(e => {
         const cert = certTone(e.cert_expires)
         const history = (e.history ?? []).slice(-120)
         return (
           <tr key={e.url}>
-            <td>{e.checked_at ? <StatusBadge tone={e.up ? 'ok' : 'critical'} label={e.up ? 'en ligne' : 'hors ligne'} /> : <StatusBadge tone="neutral" label="en attente" />}</td>
             <td>
-              <a href={e.url} target="_blank" rel="noreferrer" className="font-medium text-foreground hover:underline">{hostOf(e.url)}</a>
-              {e.error && <div className="text-[11px]" style={{ color: toneColor.critical }}>{e.error}</div>}
+              {e.checked_at ? (
+                <StatusBadge tone={e.up ? 'ok' : 'critical'} label={e.up ? 'en ligne' : 'hors ligne'} />
+              ) : (
+                <StatusBadge tone="neutral" label="en attente" />
+              )}
+            </td>
+            <td>
+              <a href={e.url} target="_blank" rel="noreferrer" className="font-medium text-foreground hover:underline">
+                {hostOf(e.url)}
+              </a>
+              {e.error && (
+                <div className="text-2xs" style={{ color: toneColor.critical }}>
+                  {e.error}
+                </div>
+              )}
             </td>
             <td className={NUM}>{e.status || '—'}</td>
-            <td className={NUM} style={{ color: e.latency_ms >= 2000 ? toneColor.warning : undefined }}>{e.checked_at ? `${formatNumber(e.latency_ms)} ms` : '—'}</td>
-            <td><MiniTrend values={history.map(p => p.latency_ms)} color={A} /></td>
+            <td className={NUM} style={{ color: e.latency_ms >= 2000 ? toneColor.warning : undefined }}>
+              {e.checked_at ? `${formatNumber(e.latency_ms)} ms` : '—'}
+            </td>
+            <td>
+              <MiniTrend values={history.map(p => p.latency_ms)} color={A} />
+            </td>
             <td className={NUM}>{history.length ? formatPercent(e.uptime_percent) : '—'}</td>
-            <td title={e.cert_issuer}>{cert.label === '—' ? '—' : <StatusBadge tone={cert.tone} label={cert.label} />}</td>
+            <td title={e.cert_issuer}>
+              {cert.label === '—' ? '—' : <StatusBadge tone={cert.tone} label={cert.label} />}
+            </td>
             <td className="whitespace-nowrap text-muted-foreground">{formatRelative(e.checked_at)}</td>
           </tr>
         )
@@ -467,16 +598,29 @@ function ProcessesPanel({ data, sortBy }: { data: MonitorResponse; sortBy: 'cpu'
   }, [data.processes, sortBy])
   const total = data.now.memory.total || 1
   return (
-    <Table label="Processus les plus actifs" head={['PID', 'Processus', 'Utilisateur', 'CPU', 'Mémoire', 'Unité', 'Commande']} numeric={[0, 3, 4]} empty={rows.length === 0}>
+    <Table
+      label="Processus les plus actifs"
+      head={['PID', 'Processus', 'Utilisateur', 'CPU', 'Mémoire', 'Unité', 'Commande']}
+      numeric={[0, 3, 4]}
+      empty={rows.length === 0}
+    >
       {rows.map(p => (
         <tr key={p.pid}>
           <td className={`${NUM} text-muted-foreground`}>{p.pid}</td>
           <td className="font-medium text-foreground">{p.name}</td>
           <td className="text-muted-foreground">{p.user}</td>
-          <td className={NUM} style={{ color: p.cpu >= 80 ? toneColor.warning : undefined }}>{formatPercent(p.cpu)}</td>
-          <td className={NUM}>{formatBytes(p.rss)} <span className="text-muted-foreground">({formatPercent((p.rss / total) * 100)})</span></td>
-          <td className="max-w-[180px] truncate text-muted-foreground" title={p.unit}>{p.unit?.replace(/\.service$/, '') ?? '—'}</td>
-          <td className="max-w-[360px] truncate text-muted-foreground" title={p.command}>{p.command}</td>
+          <td className={NUM} style={{ color: p.cpu >= 80 ? toneColor.warning : undefined }}>
+            {formatPercent(p.cpu)}
+          </td>
+          <td className={NUM}>
+            {formatBytes(p.rss)} <span className="text-muted-foreground">({formatPercent((p.rss / total) * 100)})</span>
+          </td>
+          <td className="max-w-[180px] truncate text-muted-foreground" title={p.unit}>
+            {p.unit?.replace(/\.service$/, '') ?? '—'}
+          </td>
+          <td className="max-w-[360px] truncate text-muted-foreground" title={p.command}>
+            {p.command}
+          </td>
         </tr>
       ))}
     </Table>
@@ -488,7 +632,7 @@ function StoragePanel({ data }: { data: MonitorResponse }) {
   const disks = data.disks ?? []
   return (
     <div className="grid items-start gap-3 lg:grid-cols-2">
-      <div className="flex flex-col gap-4 rounded-lg border border-border bg-card p-3 font-normal">
+      <div className="flex flex-col gap-4 atlas-surface rounded-lg p-3 font-normal">
         <h4 className="text-xs font-semibold text-foreground">Systèmes de fichiers</h4>
         {filesystems.map(fs => {
           const tone = pctTone(fs.percent, 80, 90)
@@ -496,12 +640,16 @@ function StoragePanel({ data }: { data: MonitorResponse }) {
             <div key={fs.mount} className="flex flex-col gap-1">
               <div className="flex items-baseline gap-2 text-xs">
                 <span className="font-medium text-foreground">{fs.mount}</span>
-                <span className="text-[11px] text-muted-foreground">{fs.device} · {fs.fstype}</span>
+                <span className="text-2xs text-muted-foreground">
+                  {fs.device} · {fs.fstype}
+                </span>
                 <span className="ml-auto tabular-nums text-foreground">{formatPercent(fs.percent)}</span>
               </div>
               <Meter value={fs.percent} tone={tone} />
-              <div className="flex flex-wrap gap-x-3 text-[11px] text-muted-foreground">
-                <span>{formatBytes(fs.used)} / {formatBytes(fs.total)}</span>
+              <div className="flex flex-wrap gap-x-3 text-2xs text-muted-foreground">
+                <span>
+                  {formatBytes(fs.used)} / {formatBytes(fs.total)}
+                </span>
                 <span>{formatBytes(fs.available)} libres</span>
                 <span>inodes {formatPercent(fs.inodes_percent)}</span>
                 {fs.growth_per_day !== undefined && (
@@ -515,13 +663,20 @@ function StoragePanel({ data }: { data: MonitorResponse }) {
           )
         })}
       </div>
-      <Table label="Disques" head={['Disque', 'Lecture', 'Écriture', 'IOPS l/é', 'Occupation']} numeric={[1, 2, 3, 4]} empty={disks.length === 0}>
+      <Table
+        label="Disques"
+        head={['Disque', 'Lecture', 'Écriture', 'IOPS l/é', 'Occupation']}
+        numeric={[1, 2, 3, 4]}
+        empty={disks.length === 0}
+      >
         {disks.map(d => (
           <tr key={d.name}>
             <td className="font-medium text-foreground">{d.name}</td>
             <td className={NUM}>{formatRate(d.read_rate)}</td>
             <td className={NUM}>{formatRate(d.write_rate)}</td>
-            <td className={NUM}>{formatNumber(d.read_iops)} / {formatNumber(d.write_iops)}</td>
+            <td className={NUM}>
+              {formatNumber(d.read_iops)} / {formatNumber(d.write_iops)}
+            </td>
             <td className={NUM}>{formatPercent(d.util)}</td>
           </tr>
         ))}
@@ -536,7 +691,12 @@ function NetworkPanel({ data }: { data: MonitorResponse }) {
   const exposed = listeners.filter(l => l.public).length
   return (
     <div className="flex flex-col gap-3">
-      <Table label="Interfaces réseau" head={['Interface', 'Entrant', 'Sortant', 'Total reçu', 'Total envoyé', 'Erreurs']} numeric={[1, 2, 3, 4, 5]} empty={interfaces.length === 0}>
+      <Table
+        label="Interfaces réseau"
+        head={['Interface', 'Entrant', 'Sortant', 'Total reçu', 'Total envoyé', 'Erreurs']}
+        numeric={[1, 2, 3, 4, 5]}
+        empty={interfaces.length === 0}
+      >
         {interfaces.map(i => (
           <tr key={i.name}>
             <td className="font-medium text-foreground">{i.name}</td>
@@ -544,21 +704,36 @@ function NetworkPanel({ data }: { data: MonitorResponse }) {
             <td className={NUM}>{formatRate(i.tx_rate)}</td>
             <td className={`${NUM} text-muted-foreground`}>{formatBytes(i.rx_total)}</td>
             <td className={`${NUM} text-muted-foreground`}>{formatBytes(i.tx_total)}</td>
-            <td className={NUM} style={{ color: i.errors + i.drops > 0 ? toneColor.warning : undefined }}>{i.errors + i.drops}</td>
+            <td className={NUM} style={{ color: i.errors + i.drops > 0 ? toneColor.warning : undefined }}>
+              {i.errors + i.drops}
+            </td>
           </tr>
         ))}
       </Table>
       <div>
         <div className="mb-1.5 text-xs font-normal text-muted-foreground">
-          {listeners.length} ports en écoute · <span style={{ color: exposed ? toneColor.warning : undefined }}>{exposed} exposés sur Internet</span>
+          {listeners.length} ports en écoute ·{' '}
+          <span style={{ color: exposed ? toneColor.warning : undefined }}>{exposed} exposés sur Internet</span>
         </div>
-        <Table label="Ports en écoute" head={['Exposition', 'Port', 'Adresse', 'Processus', 'Unité']} empty={listeners.length === 0}>
+        <Table
+          label="Ports en écoute"
+          head={['Exposition', 'Port', 'Adresse', 'Processus', 'Unité']}
+          empty={listeners.length === 0}
+        >
           {listeners.map(l => (
             <tr key={`${l.proto}-${l.address}-${l.port}`}>
-              <td>{l.public ? <StatusBadge tone="warning" label="public" /> : <StatusBadge tone="ok" label="local" />}</td>
-              <td className="whitespace-nowrap tabular-nums font-medium text-foreground">{l.port}<span className="ml-1 text-[11px] font-normal text-muted-foreground">{l.proto}</span></td>
+              <td>
+                {l.public ? <StatusBadge tone="warning" label="public" /> : <StatusBadge tone="ok" label="local" />}
+              </td>
+              <td className="whitespace-nowrap tabular-nums font-medium text-foreground">
+                {l.port}
+                <span className="ml-1 text-2xs font-normal text-muted-foreground">{l.proto}</span>
+              </td>
               <td className="text-muted-foreground">{l.address}</td>
-              <td>{l.process ?? '—'}{l.pid ? <span className="ml-1 text-[11px] text-muted-foreground">#{l.pid}</span> : null}</td>
+              <td>
+                {l.process ?? '—'}
+                {l.pid ? <span className="ml-1 text-2xs text-muted-foreground">#{l.pid}</span> : null}
+              </td>
               <td className="text-muted-foreground">{l.unit?.replace(/\.service$/, '') ?? '—'}</td>
             </tr>
           ))}
@@ -573,16 +748,28 @@ function SSHSummary({ ssh }: { ssh: MonitorSSHReport }) {
   const cfg = ssh.config ?? {}
   return (
     <div className="grid items-start gap-3 lg:grid-cols-3">
-      <Table label="Adresses IP refusées" head={['IP (24 h)', 'Tentatives', 'fail2ban']} numeric={[1]} empty={!ssh.top_ips?.length}>
+      <Table
+        label="Adresses IP refusées"
+        head={['IP (24 h)', 'Tentatives', 'fail2ban']}
+        numeric={[1]}
+        empty={!ssh.top_ips?.length}
+      >
         {(ssh.top_ips ?? []).map(ip => (
           <tr key={ip.ip}>
             <td className="font-medium text-foreground">{ip.ip}</td>
             <td className={NUM}>{formatNumber(ip.count)}</td>
-            <td>{ip.banned ? <StatusBadge tone="ok" label="bannie" /> : <StatusBadge tone="neutral" label="libre" />}</td>
+            <td>
+              {ip.banned ? <StatusBadge tone="ok" label="bannie" /> : <StatusBadge tone="neutral" label="libre" />}
+            </td>
           </tr>
         ))}
       </Table>
-      <Table label="Identifiants essayés" head={['Identifiant essayé', 'Tentatives']} numeric={[1]} empty={!ssh.top_users?.length}>
+      <Table
+        label="Identifiants essayés"
+        head={['Identifiant essayé', 'Tentatives']}
+        numeric={[1]}
+        empty={!ssh.top_users?.length}
+      >
         {(ssh.top_users ?? []).map(u => (
           <tr key={u.key}>
             <td className="font-medium text-foreground">{u.key}</td>
@@ -592,17 +779,41 @@ function SSHSummary({ ssh }: { ssh: MonitorSSHReport }) {
       </Table>
       <div className="flex flex-col gap-3">
         <div className="rounded-lg border border-border bg-card p-3 text-xs font-normal leading-relaxed text-muted-foreground">
-          <div><span className="text-foreground">{formatNumber(ssh.unique_ips)}</span> IP distinctes · <span className="text-foreground">{formatNumber(ssh.root_attempts)}</span> essais sur root</div>
-          <div>mot de passe : <span className="text-foreground">{cfg.passwordauthentication === 'yes' ? 'accepté' : cfg.passwordauthentication ? 'refusé' : '—'}</span> · port <span className="text-foreground">{cfg.port ?? '—'}</span></div>
+          <div>
+            <span className="text-foreground">{formatNumber(ssh.unique_ips)}</span> IP distinctes ·{' '}
+            <span className="text-foreground">{formatNumber(ssh.root_attempts)}</span> essais sur root
+          </div>
+          <div>
+            mot de passe :{' '}
+            <span className="text-foreground">
+              {cfg.passwordauthentication === 'yes' ? 'accepté' : cfg.passwordauthentication ? 'refusé' : '—'}
+            </span>{' '}
+            · port <span className="text-foreground">{cfg.port ?? '—'}</span>
+          </div>
           {f2b ? (
-            <div>fail2ban : <span className="text-foreground">{f2b.currently_banned}</span> bannies · règle {f2b.max_retry} échecs / {formatDuration(f2b.find_time)} → {formatDuration(f2b.ban_time)}</div>
-          ) : <div>fail2ban : absent</div>}
+            <div>
+              fail2ban : <span className="text-foreground">{f2b.currently_banned}</span> bannies · règle {f2b.max_retry}{' '}
+              échecs / {formatDuration(f2b.find_time)} → {formatDuration(f2b.ban_time)}
+            </div>
+          ) : (
+            <div>fail2ban : absent</div>
+          )}
         </div>
         <Table label="Connexions réussies" head={['Connexion réussie', 'Depuis']} empty={!ssh.accepted?.length}>
           {(ssh.accepted ?? []).map((l, i) => (
             <tr key={i}>
-              <td className="text-muted-foreground">{new Date(l.t).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} · <span className="text-foreground">{l.user}</span></td>
-              <td>{l.ip} <span className="text-[11px] text-muted-foreground">{l.method}</span></td>
+              <td className="text-muted-foreground">
+                {new Date(l.t).toLocaleString('fr-FR', {
+                  day: '2-digit',
+                  month: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}{' '}
+                · <span className="text-foreground">{l.user}</span>
+              </td>
+              <td>
+                {l.ip} <span className="text-2xs text-muted-foreground">{l.method}</span>
+              </td>
             </tr>
           ))}
         </Table>
@@ -617,21 +828,37 @@ function LogsPanel({ data }: { data: MonitorResponse }) {
   return (
     <div className="flex flex-col gap-3 font-normal">
       <div className="grid gap-3 sm:grid-cols-3">
-        <Kpi label="Erreurs du journal (1 h)" value={formatNumber(logs.errors_last_hour)} tone={logs.errors_last_hour >= 50 ? 'warning' : 'ok'} />
-        <Kpi label="Tentatives SSH refusées (24 h)" value={formatNumber(logs.ssh_failures_24h)} tone={logs.ssh_failures_24h >= 100 ? 'warning' : 'ok'} />
-        <Kpi label="Analysé" value={formatRelative(logs.checked_at)}>toutes les 5 minutes</Kpi>
+        <Kpi
+          label="Erreurs du journal (1 h)"
+          value={formatNumber(logs.errors_last_hour)}
+          tone={logs.errors_last_hour >= 50 ? 'warning' : 'ok'}
+        />
+        <Kpi
+          label="Tentatives SSH refusées (24 h)"
+          value={formatNumber(logs.ssh_failures_24h)}
+          tone={logs.ssh_failures_24h >= 100 ? 'warning' : 'ok'}
+        />
+        <Kpi label="Analysé" value={formatRelative(logs.checked_at)}>
+          toutes les 5 minutes
+        </Kpi>
       </div>
       {logs.ssh && logs.ssh.attempts > 0 && <SSHSummary ssh={logs.ssh} />}
       <div className="rounded-lg border border-border bg-card">
-        <h4 className="border-b border-border px-3 py-2 text-xs font-semibold text-foreground">Dernières erreurs (priorité err et plus)</h4>
+        <h4 className="border-b border-border px-3 py-2 text-xs font-semibold text-foreground">
+          Dernières erreurs (priorité err et plus)
+        </h4>
         {lines.length === 0 ? (
           <div className="px-3 py-4 text-xs text-muted-foreground">Aucune erreur sur la dernière heure.</div>
         ) : (
           <ul className="divide-y divide-border/50">
             {lines.map((l, i) => (
               <li key={i} className="flex flex-wrap gap-x-3 px-3 py-2 text-xs sm:flex-nowrap">
-                <span className="shrink-0 tabular-nums text-muted-foreground">{new Date(l.t).toLocaleTimeString('fr-FR')}</span>
-                <span className="w-40 shrink-0 truncate text-foreground" title={l.unit}>{l.unit || '—'}</span>
+                <span className="shrink-0 tabular-nums text-muted-foreground">
+                  {new Date(l.t).toLocaleTimeString('fr-FR')}
+                </span>
+                <span className="w-40 shrink-0 truncate text-foreground" title={l.unit}>
+                  {l.unit || '—'}
+                </span>
                 <span className="min-w-0 break-words text-muted-foreground">{l.message}</span>
               </li>
             ))}
@@ -664,14 +891,22 @@ export function Monitoring() {
   if (!data) {
     return (
       <section aria-labelledby="monitoring-title" className="mb-6">
-        <h2 id="monitoring-title" className="mb-2.5 text-sm font-semibold text-foreground">Monitoring</h2>
+        <h2 id="monitoring-title" className="mb-2.5 text-sm font-semibold text-foreground">
+          Métriques
+        </h2>
         {status === 'error' ? (
           <div className="rounded-lg border border-border bg-card p-4 text-xs font-normal text-muted-foreground">
             Impossible de joindre /api/monitor. Nouvelle tentative automatique dans quelques secondes.
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6" role="status" aria-label="Chargement des métriques…">
-            {Array.from({ length: 6 }, (_, i) => <div key={i} className="ui-skeleton h-36" />)}
+          <div
+            className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6"
+            role="status"
+            aria-label="Chargement des métriques…"
+          >
+            {Array.from({ length: 6 }, (_, i) => (
+              <div key={i} className="ui-skeleton h-36" />
+            ))}
           </div>
         )}
       </section>
@@ -707,9 +942,11 @@ export function Monitoring() {
   return (
     <section aria-labelledby="monitoring-title" className="mb-6">
       {/* Header: stays visible because the range drives every chart below */}
-      <div className="sticky -top-4 z-20 -mx-4 mb-3 sm:-top-6 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-background px-4 py-2 sm:-mx-6 sm:px-6">
-        <h2 id="monitoring-title" className="text-sm font-semibold text-foreground">Monitoring</h2>
-        <span className="inline-flex items-center gap-1.5 text-[11px] font-normal text-muted-foreground" role="status">
+      <div className="sticky top-0 z-20 -mx-4 mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-background px-4 py-2 sm:-mx-6 sm:px-6">
+        <h2 id="monitoring-title" className="text-sm font-semibold text-foreground">
+          Métriques
+        </h2>
+        <span className="inline-flex items-center gap-1.5 text-2xs font-normal text-muted-foreground" role="status">
           <span
             aria-hidden
             className={`h-1.5 w-1.5 rounded-full ${stale ? '' : 'animate-[pulse_2s_ease-in-out_infinite]'}`}
@@ -731,14 +968,22 @@ export function Monitoring() {
           />
         </div>
       </div>
-      <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-normal text-muted-foreground">
+      <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-2xs font-normal text-muted-foreground">
         <span className="font-medium text-foreground">{host.hostname}</span>
         <span>{host.os}</span>
         <span>noyau {host.kernel}</span>
-        <span title={host.cpu_model}>{host.cpus} vCPU · {formatBytes(mem.total)} RAM</span>
+        <span title={host.cpu_model}>
+          {host.cpus} vCPU · {formatBytes(mem.total)} RAM
+        </span>
         <span>démarré il y a {formatDuration(now.uptime_seconds)}</span>
-        <span>{formatNumber(now.procs)} processus · {formatNumber(now.threads)} threads</span>
-        {host.reboot_required && <span style={{ color: toneColor.warning }}>▲ redémarrage requis</span>}
+        <span>
+          {formatNumber(now.procs)} processus · {formatNumber(now.threads)} fils d’exécution
+        </span>
+        {host.reboot_required && (
+          <span className="inline-flex items-center gap-1" style={{ color: toneColor.warning }}>
+            <TriangleAlert size={14} aria-hidden="true" /> redémarrage requis
+          </span>
+        )}
       </div>
 
       <Alerts alerts={data.alerts ?? []} />
@@ -754,7 +999,7 @@ export function Monitoring() {
             ['Utilisateur', formatPercent(now.cpu.user)],
             ['Système', formatPercent(now.cpu.system)],
             ['Attente disque', formatPercent(now.cpu.iowait)],
-            ['Volé (steal)', formatPercent(now.cpu.steal)],
+            ['Temps dérobé', formatPercent(now.cpu.steal)],
           ]}
         >
           {now.cores && now.cores.length > 0 && <CoreStrip cores={now.cores} />}
@@ -781,7 +1026,11 @@ export function Monitoring() {
               ['Libres', formatBytes(root.available)],
               ['Total', formatBytes(root.total)],
               ['Inodes', formatPercent(root.inodes_percent)],
-              root.days_to_full ? ['Plein dans', `~${formatNumber(root.days_to_full)} j`] : root.growth_per_day !== undefined ? ['Croissance', 'stable'] : ['Projection', 'après 6 h'],
+              root.days_to_full
+                ? ['Plein dans', `~${formatNumber(root.days_to_full)} j`]
+                : root.growth_per_day !== undefined
+                  ? ['Croissance', 'stable']
+                  : ['Projection', 'après 6 h'],
             ]}
           />
         )}
@@ -844,12 +1093,14 @@ export function Monitoring() {
           ceiling={100}
           minMax={10}
           format={formatPercent}
-          series={mem.swap_total
-            ? [
-                { key: 'mem', label: 'RAM', color: A, values: column(series, 'mem') },
-                { key: 'swap', label: 'Swap', color: B, values: column(series, 'swap') },
-              ]
-            : [{ key: 'mem', label: 'RAM', color: A, values: column(series, 'mem') }]}
+          series={
+            mem.swap_total
+              ? [
+                  { key: 'mem', label: 'RAM', color: A, values: column(series, 'mem') },
+                  { key: 'swap', label: 'Swap', color: B, values: column(series, 'swap') },
+                ]
+              : [{ key: 'mem', label: 'RAM', color: A, values: column(series, 'mem') }]
+          }
         />
         <TimeSeriesChart
           title="Charge système"
@@ -902,7 +1153,14 @@ export function Monitoring() {
           role="tablist"
           aria-label="Détails du monitoring"
           className="-mb-px flex max-w-full gap-4 overflow-x-auto"
-          onKeyDown={e => onRovingKey(e, tabs.length, tabs.findIndex(t => t.id === tab), next => setTab(tabs[next].id))}
+          onKeyDown={e =>
+            onRovingKey(
+              e,
+              tabs.length,
+              tabs.findIndex(t => t.id === tab),
+              next => setTab(tabs[next].id),
+            )
+          }
         >
           {tabs.map(t => (
             <button
@@ -915,7 +1173,9 @@ export function Monitoring() {
               tabIndex={tab === t.id ? 0 : -1}
               onClick={() => setTab(t.id)}
               className={`inline-flex min-h-9 shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-0.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
-                tab === t.id ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'
+                tab === t.id
+                  ? 'border-primary text-foreground'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}
             >
               {t.label}
@@ -935,7 +1195,10 @@ export function Monitoring() {
               label="Filtre des unités"
               value={mineOnly ? 'mine' : 'all'}
               onChange={v => setMineOnly(v === 'mine')}
-              options={[{ value: 'mine', label: 'Mes unités' }, { value: 'all', label: 'Toutes' }]}
+              options={[
+                { value: 'mine', label: 'Mes unités' },
+                { value: 'all', label: 'Toutes' },
+              ]}
             />
           )}
           {tab === 'processes' && (
@@ -943,7 +1206,10 @@ export function Monitoring() {
               label="Tri des processus"
               value={procSort}
               onChange={setProcSort}
-              options={[{ value: 'cpu', label: 'Par CPU' }, { value: 'mem', label: 'Par mémoire' }]}
+              options={[
+                { value: 'cpu', label: 'Par CPU' },
+                { value: 'mem', label: 'Par mémoire' },
+              ]}
             />
           )}
         </div>

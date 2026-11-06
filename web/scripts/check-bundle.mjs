@@ -6,9 +6,10 @@ const assets = '../pkg/server/dist/assets'
 const files = readdirSync(assets).filter(name => /\.(js|css)$/.test(name))
 const limits = {
   'entry gzip': 130 * 1024,
-  'xterm gzip': 85 * 1024,
-  // +15 KiB for the lazily loaded host monitoring dashboard (Overview chunk).
-  'total brotli': 190 * 1024,
+  // WebGL (25 Kio gzip) est chargé à la demande sur desktop ; Unicode 11,
+  // le Mur et À traiter augmentent aussi le budget global. Marge d’environ 5 %.
+  'xterm gzip': 97 * 1024,
+  'total brotli': 237 * 1024,
 }
 let entryGzip = 0
 let xtermGzip = 0

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Features
+
+* refresh the Atlas interface with an attention inbox, session previews, quick replies, window tabs, Wall and Monitoring views
+* add project directory and agent selection for new sessions, host aliases and navigation shortcuts
+
 ## [0.9.0](https://github.com/LosFurina/tmuxatlas/compare/v0.8.0...v0.9.0) (2026-07-27)
 
 ### Features

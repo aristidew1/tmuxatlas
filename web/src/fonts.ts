@@ -1,3 +1,4 @@
+import '@fontsource-variable/geist/wght.css'
 import '@fontsource/vt323/latin-400.css'
 import '@fontsource/jetbrains-mono/latin-400.css'
 import '@fontsource/jetbrains-mono/latin-700.css'

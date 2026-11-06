@@ -1,12 +1,17 @@
 export type CommandScope = 'overlay' | 'workspace' | 'terminal'
 
-export type CommandCategory = 'Navigation' | 'Session' | 'Terminal' | 'Workspace' | 'Account'
+export type CommandCategory = 'Navigation' | 'Session' | 'Terminal' | 'Espace de travail' | 'Compte'
 
 export type CommandId =
   | 'palette.open'
   | 'help.open'
   | 'navigation.overview'
   | 'navigation.settings'
+  | 'navigation.monitoring'
+  | 'navigation.wall'
+  | 'session.next'
+  | 'session.previous'
+  | `session.select.${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}`
   | 'session.new'
   | 'connection.reconnect'
   | 'terminal.fullscreen'
@@ -55,7 +60,7 @@ const terminalOnly = (environment: CommandEnvironment) => environment.hasTermina
 const definitions: readonly CommandDefinition[] = [
   {
     id: 'palette.open',
-    label: 'Open Command Palette',
+    label: 'Rechercher',
     category: 'Navigation',
     scope: 'overlay',
     shortcut: 'mod+k',
@@ -64,7 +69,7 @@ const definitions: readonly CommandDefinition[] = [
   },
   {
     id: 'help.open',
-    label: 'Keyboard shortcuts',
+    label: 'Raccourcis clavier',
     category: 'Navigation',
     scope: 'overlay',
     shortcut: 'mod+/',
@@ -73,15 +78,58 @@ const definitions: readonly CommandDefinition[] = [
   },
   {
     id: 'navigation.overview',
-    label: 'Go to Overview',
+    label: 'Vue d’ensemble',
     category: 'Navigation',
     scope: 'workspace',
     focusAfterRun: 'none',
     enablement: always,
   },
   {
+    id: 'navigation.monitoring',
+    label: 'Monitoring',
+    category: 'Navigation',
+    scope: 'workspace',
+    focusAfterRun: 'none',
+    enablement: always,
+  },
+  {
+    id: 'navigation.wall',
+    label: 'Mur',
+    category: 'Navigation',
+    scope: 'workspace',
+    focusAfterRun: 'none',
+    enablement: always,
+  },
+  {
+    id: 'session.next',
+    label: 'Session suivante',
+    category: 'Session',
+    scope: 'workspace',
+    shortcut: 'alt+shift+arrowdown',
+    focusAfterRun: 'terminal',
+    enablement: always,
+  },
+  {
+    id: 'session.previous',
+    label: 'Session précédente',
+    category: 'Session',
+    scope: 'workspace',
+    shortcut: 'alt+shift+arrowup',
+    focusAfterRun: 'terminal',
+    enablement: always,
+  },
+  ...([1, 2, 3, 4, 5, 6, 7, 8, 9] as const).map(n => ({
+    id: `session.select.${n}` as const,
+    label: `Session ${n}`,
+    category: 'Session' as const,
+    scope: 'workspace' as const,
+    shortcut: `alt+${n}`,
+    focusAfterRun: 'terminal' as const,
+    enablement: always,
+  })),
+  {
     id: 'navigation.settings',
-    label: 'Open Settings',
+    label: 'Ouvrir les réglages',
     category: 'Navigation',
     scope: 'workspace',
     shortcut: 'mod+,',
@@ -90,7 +138,7 @@ const definitions: readonly CommandDefinition[] = [
   },
   {
     id: 'session.new',
-    label: 'New Session',
+    label: 'Nouvelle session',
     category: 'Session',
     scope: 'workspace',
     focusAfterRun: 'restore',
@@ -98,7 +146,7 @@ const definitions: readonly CommandDefinition[] = [
   },
   {
     id: 'connection.reconnect',
-    label: 'Reconnect Terminal',
+    label: 'Reconnecter le terminal',
     category: 'Terminal',
     scope: 'terminal',
     focusAfterRun: 'terminal',
@@ -106,7 +154,7 @@ const definitions: readonly CommandDefinition[] = [
   },
   {
     id: 'terminal.fullscreen',
-    label: 'Toggle Terminal Fullscreen',
+    label: 'Plein écran',
     category: 'Terminal',
     scope: 'terminal',
     shortcut: 'mod+shift+f',
@@ -115,7 +163,7 @@ const definitions: readonly CommandDefinition[] = [
   },
   {
     id: 'terminal.zen',
-    label: 'Toggle Zen Mode',
+    label: 'Mode Zen',
     category: 'Terminal',
     scope: 'terminal',
     shortcut: 'mod+shift+z',
@@ -124,24 +172,25 @@ const definitions: readonly CommandDefinition[] = [
   },
   {
     id: 'workspace.sidebar.toggle',
-    label: 'Toggle Sidebar',
-    category: 'Workspace',
+    label: 'Replier la barre latérale',
+    category: 'Espace de travail',
     scope: 'workspace',
     focusAfterRun: 'restore',
     enablement: always,
   },
   {
     id: 'attention.next',
-    label: 'Go to Next Alert',
-    category: 'Workspace',
+    shortcut: 'alt+shift+n',
+    label: 'Alerte suivante',
+    category: 'Espace de travail',
     scope: 'workspace',
     focusAfterRun: 'terminal',
-    enablement: environment => environment.hasAttention,
+    enablement: always,
   },
   {
     id: 'account.sign-out',
-    label: 'Lock / Sign out',
-    category: 'Account',
+    label: 'Verrouiller / Se déconnecter',
+    category: 'Compte',
     scope: 'workspace',
     focusAfterRun: 'none',
     enablement: environment => environment.canSignOut,
@@ -150,7 +199,10 @@ const definitions: readonly CommandDefinition[] = [
 
 function normalizeConfiguredShortcut(shortcut: string | undefined): string {
   if (!shortcut) return 'mod+k'
-  return shortcut.trim().toLowerCase().replace(/^ctrl\+/, 'mod+')
+  return shortcut
+    .trim()
+    .toLowerCase()
+    .replace(/^ctrl\+/, 'mod+')
 }
 
 export function createCommandRegistry({
@@ -178,12 +230,12 @@ export function isMacPlatform(platform = typeof navigator === 'undefined' ? '' :
 export function formatShortcut(shortcut: string | undefined, mac = isMacPlatform()): string {
   if (!shortcut) return ''
   const labels: Record<string, string> = mac
-    ? { mod: '⌘', shift: '⇧', alt: '⌥', enter: '↵', space: 'Space' }
-    : { mod: 'Ctrl', shift: 'Shift', alt: 'Alt', enter: 'Enter', space: 'Space' }
+    ? { mod: '⌘', ctrl: 'Ctrl', shift: '⇧', alt: '⌥', enter: '↵', space: 'Espace' }
+    : { mod: 'Ctrl', ctrl: 'Ctrl', shift: 'Maj', alt: 'Alt', enter: 'Entrée', space: 'Espace' }
   return shortcut
     .split('+')
     .map(part => labels[part.toLowerCase()] || (part.length === 1 ? part.toUpperCase() : part))
-    .join('+')
+    .join(' ')
 }
 
 export interface ShortcutEventLike {
@@ -208,17 +260,25 @@ function shortcutMatches(event: ShortcutEventLike, shortcut: string, mac: boolea
   const actualMod = mac ? event.metaKey : event.ctrlKey
   const wrongPlatformMod = mac ? event.ctrlKey : event.metaKey
   const eventKey = event.key.toLowerCase() === ' ' ? 'space' : event.key.toLowerCase()
-  return eventKey === key
-    && actualMod === wantsMod
-    && !wrongPlatformMod
-    && event.shiftKey === wantsShift
-    && event.altKey === wantsAlt
+  const keyMatches =
+    wantsAlt && /^[1-9]$/.test(key)
+      ? event.code === `Digit${key}`
+      : wantsAlt && /^[a-z]$/.test(key)
+        ? event.code === `Key${key.toUpperCase()}` || (!event.code && eventKey === key)
+        : eventKey === key
+  return (
+    keyMatches &&
+    actualMod === wantsMod &&
+    !wrongPlatformMod &&
+    event.shiftKey === wantsShift &&
+    event.altKey === wantsAlt
+  )
 }
 
 function commandAllowedInScope(command: RegisteredCommand, activeScope: CommandScope): boolean {
   if (activeScope === 'overlay') return command.scope === 'overlay'
   if (command.scope === 'overlay') return true
-  return command.scope === activeScope
+  return command.scope === activeScope || (activeScope === 'terminal' && command.scope === 'workspace')
 }
 
 export function dispatchCommandShortcut(
@@ -227,13 +287,14 @@ export function dispatchCommandShortcut(
   activeScope: CommandScope,
   mac = isMacPlatform(),
 ): RegisteredCommand | null {
-  if (event.defaultPrevented || event.altKey && event.ctrlKey) return null
-  const command = commands.find(candidate => (
-    candidate.enabled
-    && candidate.shortcut
-    && commandAllowedInScope(candidate, activeScope)
-    && shortcutMatches(event, candidate.shortcut, mac)
-  ))
+  if (event.defaultPrevented || (event.altKey && event.ctrlKey)) return null
+  const command = commands.find(
+    candidate =>
+      candidate.enabled &&
+      candidate.shortcut &&
+      commandAllowedInScope(candidate, activeScope) &&
+      shortcutMatches(event, candidate.shortcut, mac),
+  )
   if (!command) return null
 
   // Capture before xterm's textarea listener. An executed application command must

@@ -35,9 +35,9 @@ pkg/
   ws/                    # WebSocket hub (broadcast) + PTY terminal bridge
   state/                 # Central state tree with diff-based broadcasting
   tmux/                  # tmux client, PTY, control mode, discovery
-  peer/                  # Multi-host peer protocol, manager, PTY relay
+  peer/                  # Multi-host peer protocol, manager, PTY relay, session_extras (previews, replies, directories)
   identity/              # ed25519 keypair, peer store, pairing
-  toolevents/            # Agent detection, event tracking, silence monitor, prompt parser
+  toolevents/            # Agent detection, event tracking, silence monitor, prompt parser and promptoptions
   auth/                  # Passkey auth + session management
   agentcheck/            # Agent installation & hook configuration checks
   activity/              # Activity tracking (sparklines)
@@ -55,8 +55,11 @@ pkg/
 web/
   src/
     App.tsx              # Main app component
-    components/          # React components (Sidebar, Terminal, Overview, etc.)
+    components/          # Shell, Overview, Inbox, Terminal, WindowTabs, monitoring, Brand and shared ui primitives
     hooks/               # Custom hooks (useTerminal, useSessions, useHosts, etc.)
+    state/               # Revisioned Hub projection and connection state
+    workspace/           # Workspace view model and status helpers
+    lib/                 # API clients, host labels and UI helpers
 ```
 
 ## Code Conventions

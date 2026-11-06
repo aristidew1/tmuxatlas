@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/LosFurina/tmuxatlas/pkg/paths"
 )
@@ -45,6 +47,39 @@ type Preferences struct {
 	LockBackgroundFaster    bool              `json:"lock_background_faster"`
 	LockBackgroundMinutes   int               `json:"lock_background_minutes"`
 	FullscreenHideAlerts    bool              `json:"fullscreen_hide_alerts"`
+	// HostAliases maps a host id to a display alias (max MaxHostAliasRunes).
+	HostAliases map[string]string `json:"host_aliases,omitempty"`
+}
+
+// MaxHostAliasRunes is the maximum length of a host alias.
+const MaxHostAliasRunes = 40
+
+// Sanitize normalizes user-supplied values in place: host aliases are trimmed,
+// stripped of control characters and capped; empty aliases are removed.
+func (p *Preferences) Sanitize() {
+	if p == nil || p.HostAliases == nil {
+		return
+	}
+	clean := make(map[string]string, len(p.HostAliases))
+	for id, alias := range p.HostAliases {
+		alias = strings.TrimSpace(strings.Map(func(r rune) rune {
+			if unicode.IsControl(r) {
+				return -1
+			}
+			return r
+		}, alias))
+		if runes := []rune(alias); len(runes) > MaxHostAliasRunes {
+			alias = strings.TrimSpace(string(runes[:MaxHostAliasRunes]))
+		}
+		if id == "" || len(id) > 128 || alias == "" {
+			continue
+		}
+		clean[id] = alias
+	}
+	if len(clean) == 0 {
+		clean = nil
+	}
+	p.HostAliases = clean
 }
 
 func Default() *Preferences {
@@ -120,6 +155,7 @@ func (s *Store) load() error {
 	if err := json.Unmarshal(raw, prefs); err != nil {
 		return err
 	}
+	prefs.Sanitize()
 	s.data = prefs
 	return nil
 }
@@ -139,12 +175,19 @@ func (s *Store) Get() *Preferences {
 	cp := *s.data
 	cp.Sidebar.HiddenSessions = append([]string{}, s.data.Sidebar.HiddenSessions...)
 	cp.Notifications.Statuses = append([]string{}, s.data.Notifications.Statuses...)
+	if s.data.HostAliases != nil {
+		cp.HostAliases = make(map[string]string, len(s.data.HostAliases))
+		for id, alias := range s.data.HostAliases {
+			cp.HostAliases[id] = alias
+		}
+	}
 	return &cp
 }
 
 func (s *Store) Update(prefs *Preferences) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	prefs.Sanitize()
 	s.data = prefs
 	return s.save()
 }

@@ -41,7 +41,7 @@ func (router *ActionRouter) Execute(ctx context.Context, operation string, targe
 	if router.manager == nil {
 		return ActionResponse{}, RuntimeError{RequestID: requestID, Code: ErrorPeerOffline}
 	}
-	if operation != "new" && !router.manager.HasSession(target.HostID, target.Session) {
+	if operation != "new" && operation != "directories" && !router.manager.HasSession(target.HostID, target.Session) {
 		return ActionResponse{}, RuntimeError{RequestID: requestID, Code: ErrorNotFound}
 	}
 	if router.manager.IsLocal(target.HostID) {
@@ -50,6 +50,11 @@ func (router *ActionRouter) Execute(ctx context.Context, operation string, targe
 		}
 		result, err := router.local.Execute(ctx, operation, target, payload)
 		if err != nil {
+			var runtimeError RuntimeError
+			if errors.As(err, &runtimeError) {
+				runtimeError.RequestID = requestID
+				return ActionResponse{}, runtimeError
+			}
 			return ActionResponse{}, RuntimeError{RequestID: requestID, Code: ErrorExecutionFailed}
 		}
 		return ActionResponse{RequestID: requestID, Result: result}, nil
@@ -61,6 +66,10 @@ func (router *ActionRouter) Execute(ctx context.Context, operation string, targe
 	}
 	if !connection.Supports(CapabilitySessionActions) || !connection.Supports(CapabilityRequestResults) {
 		return ActionResponse{}, RuntimeError{RequestID: requestID, Generation: connection.Generation, Code: ErrorCapabilityUnsupported}
+	}
+	if requiresSessionExtras(operation, payload) && !connection.Supports(CapabilitySessionExtras) {
+		return ActionResponse{}, RuntimeError{RequestID: requestID, Generation: connection.Generation, Code: ErrorUnsupported,
+			Message: "this host's Agent is too old for this operation; update it"}
 	}
 	requestCtx, cancel := context.WithTimeout(ctx, router.timeout)
 	defer cancel()

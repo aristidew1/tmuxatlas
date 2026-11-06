@@ -1,14 +1,15 @@
 import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { flushSync } from 'react-dom'
+import { MobileNav } from './components/MobileNav'
+import { useAttentionBadge } from './hooks/useAttentionBadge'
+import { selectWindow, selectPane, type NewSessionAgent } from './lib/sessionApi'
+import { RuntimeAPIError } from './lib/runtimeApi'
 import { Sidebar } from './components/Sidebar'
 import { TopBar } from './components/TopBar'
 import { StatusBar } from './components/StatusBar'
 import { Login } from './components/Login'
 import { StateConnectionNotice } from './components/StateConnectionNotice'
-import {
-  AuthLoadingState,
-  EmptyWorkspaceState,
-  WorkspaceLoadingState,
-} from './components/PageStates'
+import { AuthLoadingState, EmptyWorkspaceState, WorkspaceLoadingState } from './components/PageStates'
 import type { TerminalCommandActions } from './components/Terminal'
 import { useTerminalDrafts } from './hooks/useTerminalDrafts'
 import { type Session, sessionKey, parseSessionKey } from './hooks/useSessions'
@@ -21,23 +22,62 @@ import { useVisualViewportVariables } from './hooks/useVisualViewport'
 import { useAuth } from './hooks/useAuth'
 import { applyTheme } from './theme'
 import { getBrandStorage, setBrandStorage } from './lib/brandStorage'
+import { isEditingOutsideTerminal } from './lib/focusGuard'
 import { postRuntimeMutation } from './lib/runtimeApi'
 import { ApplicationStateProvider, useApplicationState } from './state/provider'
-import { createCommandRegistry, dispatchCommandShortcut, type CommandHandler, type CommandId, type CommandScope } from './commands/registry'
+import {
+  createCommandRegistry,
+  dispatchCommandShortcut,
+  type CommandHandler,
+  type CommandId,
+  type CommandScope,
+} from './commands/registry'
 import { buildWorkspaceViewModel } from './workspace/model'
 import { useWorkspacePreferences } from './workspace/preferences'
 
-type View = 'overview' | 'session' | 'settings' | 'setup'
+function errorMessage(err: unknown): string {
+  if (err instanceof RuntimeAPIError)
+    return (
+      (
+        {
+          'invalid-target': 'La session cible est invalide.',
+          'not-found': 'La session n’existe plus.',
+          'peer-offline': 'L’hôte est hors ligne.',
+          'peer-revoked': 'L’accès à l’hôte a été révoqué.',
+          'protocol-incompatible': 'L’hôte doit être mis à jour.',
+          'capability-unsupported': 'Cette action n’est pas prise en charge par l’hôte.',
+          'queue-full': 'L’hôte est occupé. Réessayez bientôt.',
+          timeout: 'L’hôte n’a pas répondu à temps.',
+          'execution-unknown': 'Résultat inconnu. Vérifiez la session avant de réessayer.',
+          'request-conflict': 'Cette demande entre en conflit avec une action précédente.',
+          'resource-exhausted': 'L’hôte ne peut pas conserver un autre résultat.',
+        } as Record<string, string>
+      )[err.code] || 'L’action sur la session a échoué.'
+    )
+  return 'L’action sur la session a échoué.'
+}
 
+type View = 'overview' | 'session' | 'settings' | 'setup' | 'monitoring' | 'wall'
+
+const MonitoringPage = lazy(() =>
+  import('./components/monitoring/MonitoringPage').then(module => ({ default: module.MonitoringPage })),
+)
+const WallView = lazy(() => import('./components/WallView').then(module => ({ default: module.WallView })))
 const HelpModal = lazy(() => import('./components/HelpModal').then(module => ({ default: module.HelpModal })))
-const NewSessionModal = lazy(() => import('./components/NewSessionModal').then(module => ({ default: module.NewSessionModal })))
+const NewSessionModal = lazy(() =>
+  import('./components/NewSessionModal').then(module => ({ default: module.NewSessionModal })),
+)
 const Overview = lazy(() => import('./components/Overview').then(module => ({ default: module.Overview })))
-const QuickSwitcher = lazy(() => import('./components/QuickSwitcher').then(module => ({ default: module.QuickSwitcher })))
+const QuickSwitcher = lazy(() =>
+  import('./components/QuickSwitcher').then(module => ({ default: module.QuickSwitcher })),
+)
 const Settings = lazy(() => import('./components/Settings').then(module => ({ default: module.Settings })))
 const Setup = lazy(() => import('./components/Setup').then(module => ({ default: module.Setup })))
 const Terminal = lazy(() => import('./components/Terminal').then(module => ({ default: module.Terminal })))
 
 function getViewFromPath(): { view: View; sessionKey: string | null } {
+  if (window.location.pathname === '/monitoring') return { view: 'monitoring', sessionKey: null }
+  if (window.location.pathname === '/wall') return { view: 'wall', sessionKey: null }
   if (window.location.pathname === '/settings') {
     return { view: 'settings', sessionKey: null }
   }
@@ -63,22 +103,30 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
     activity,
     rehydrate,
   } = useApplicationState()
-  const refresh = useCallback(async () => { rehydrate() }, [rehydrate])
-  const getSessionEvents = useCallback((key: string) => {
-    const { host, name } = parseSessionKey(key)
-    return allToolEvents.filter(event => event.host === host && event.session === name)
-  }, [allToolEvents])
-  const sessionNeedsAttention = useCallback((key: string) => (
-    getSessionEvents(key).some(event => event.status === 'waiting')
-  ), [getSessionEvents])
+  const refresh = useCallback(async () => {
+    rehydrate()
+  }, [rehydrate])
+  const getSessionEvents = useCallback(
+    (key: string) => {
+      const { host, name } = parseSessionKey(key)
+      return allToolEvents.filter(event => event.host === host && event.session === name)
+    },
+    [allToolEvents],
+  )
+  const sessionNeedsAttention = useCallback(
+    (key: string) => getSessionEvents(key).some(event => event.status === 'waiting'),
+    [getSessionEvents],
+  )
   const getSessionActivity = useCallback((key: string) => activity.get(key), [activity])
   const dismissEvent = useCallback(async (event: ToolEvent) => {
     await fetch('/api/tool-event', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        host: event.host || '', session: event.session,
-        window: event.window, pane: event.pane || '',
+        host: event.host || '',
+        session: event.session,
+        window: event.window,
+        pane: event.pane || '',
       }),
     })
   }, [])
@@ -91,7 +139,8 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
   const [selectedSession, setSelectedSession] = useState<string | null>(() => getViewFromPath().sessionKey)
   const [serverVersion, setServerVersion] = useState<string | null>(null)
   const loadedVersionRef = useRef<string | null>(null)
-  const updateAvailable = loadedVersionRef.current !== null && serverVersion !== null && serverVersion !== loadedVersionRef.current
+  const updateAvailable =
+    loadedVersionRef.current !== null && serverVersion !== null && serverVersion !== loadedVersionRef.current
   const [quickSwitcherOpen, setQuickSwitcherOpen] = useState(false)
   const [newSessionModalOpen, setNewSessionModalOpen] = useState(false)
   const terminalContainerRef = useRef<HTMLDivElement>(null)
@@ -109,12 +158,13 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
   const { prefs, loaded: preferencesLoaded } = usePreferences()
   const workspacePreferences = useWorkspacePreferences()
   const terminalDrafts = useTerminalDrafts()
-  const workspace = useMemo(() => buildWorkspaceViewModel(sessions, allToolEvents, activity, hosts), [sessions, allToolEvents, activity, hosts])
+  const workspace = useMemo(
+    () => buildWorkspaceViewModel(sessions, allToolEvents, activity, hosts),
+    [sessions, allToolEvents, activity, hosts],
+  )
 
   useEffect(() => {
-    const metadata = applicationState.projection.metadata?.server as
-      | { version?: string }
-      | undefined
+    const metadata = applicationState.projection.metadata?.server as { version?: string } | undefined
     const version = metadata?.version || null
     if (!loadedVersionRef.current && version) loadedVersionRef.current = version
     setServerVersion(version)
@@ -123,15 +173,21 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
   const notifiedEventsRef = useRef<Set<string> | null>(null)
   useEffect(() => {
     if (applicationState.connection !== 'ready') return
-    const signatures = new Set(allToolEvents.map(event => [
-      event.host, event.session, event.window, event.pane,
-      event.tool, event.status, event.timestamp,
-    ].join('|')))
+    const signatures = new Set(
+      allToolEvents.map(event =>
+        [event.host, event.session, event.window, event.pane, event.tool, event.status, event.timestamp].join('|'),
+      ),
+    )
     if (notifiedEventsRef.current) {
       for (const event of allToolEvents) {
         const signature = [
-          event.host, event.session, event.window, event.pane,
-          event.tool, event.status, event.timestamp,
+          event.host,
+          event.session,
+          event.window,
+          event.pane,
+          event.tool,
+          event.status,
+          event.timestamp,
         ].join('|')
         if (!notifiedEventsRef.current.has(signature)) processToolEvent(event)
       }
@@ -145,12 +201,13 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
     if (!onLogout || !prefs.lock_timeout_minutes) return
 
     const idleMs = prefs.lock_timeout_minutes * 60 * 1000
-    const bgMs = prefs.lock_background_faster && prefs.lock_background_minutes
-      ? prefs.lock_background_minutes * 60 * 1000
-      : idleMs
+    const bgMs =
+      prefs.lock_background_faster && prefs.lock_background_minutes ? prefs.lock_background_minutes * 60 * 1000 : idleMs
 
     // Track user activity
-    const onActivity = () => { lastActivityRef.current = Date.now() }
+    const onActivity = () => {
+      lastActivityRef.current = Date.now()
+    }
     const events = ['keydown', 'click', 'scroll', 'touchstart', 'mousemove'] as const
     const opts: AddEventListenerOptions = { passive: true, capture: true }
     events.forEach(e => document.addEventListener(e, onActivity, opts))
@@ -204,31 +261,47 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
 
   // Navigate to a session or view (push history)
   // sessKey is either "name" (local) or "host/name" (remote)
-  const navigateTo = useCallback((sessKey: string | null, view?: View) => {
-    let path: string
-    if (view === 'settings') {
-      path = '/settings'
-    } else if (view === 'setup') {
-      path = '/setup'
-    } else if (sessKey) {
-      const { host, name } = parseSessionKey(sessKey)
-      path = `/session/${encodeURIComponent(host)}/${encodeURIComponent(name)}`
-    } else {
-      path = '/'
-    }
-    if (window.location.pathname !== path) {
-      window.history.pushState(null, '', path)
-    }
-    setSelectedSession(sessKey)
-    setCurrentView(view || (sessKey ? 'session' : 'overview'))
-  }, [])
+  const navigateTo = useCallback(
+    (sessKey: string | null, view?: View) => {
+      let path: string
+      if (view === 'monitoring' || view === 'wall') {
+        path = `/${view}`
+      } else if (view === 'settings') {
+        path = '/settings'
+      } else if (view === 'setup') {
+        path = '/setup'
+      } else if (sessKey) {
+        const { host, name } = parseSessionKey(sessKey)
+        path = `/session/${encodeURIComponent(host)}/${encodeURIComponent(name)}`
+      } else {
+        path = '/'
+      }
+      if (window.location.pathname !== path) {
+        window.history.pushState(null, '', path)
+      }
+      const nextView = view || (sessKey ? 'session' : 'overview')
+      const update = () => {
+        setSelectedSession(sessKey)
+        setCurrentView(nextView)
+      }
+      const transition = document.startViewTransition
+      if (
+        nextView !== currentView &&
+        transition &&
+        !(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false)
+      ) {
+        try {
+          transition.call(document, () => flushSync(update))
+        } catch {
+          update()
+        }
+      } else update()
+    },
+    [currentView],
+  )
 
   useEffect(() => {
-    if (
-      defaultViewAppliedRef.current
-      || !preferencesLoaded
-      || applicationState.connection !== 'ready'
-    ) {
+    if (defaultViewAppliedRef.current || !preferencesLoaded || applicationState.connection !== 'ready') {
       return
     }
     defaultViewAppliedRef.current = true
@@ -237,11 +310,7 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
     const target = workspacePreferences.recent.find(candidate => workspace.byTarget.has(candidate))
     if (!target) return
     const { host, name } = parseSessionKey(target)
-    window.history.replaceState(
-      null,
-      '',
-      `/session/${encodeURIComponent(host)}/${encodeURIComponent(name)}`,
-    )
+    window.history.replaceState(null, '', `/session/${encodeURIComponent(host)}/${encodeURIComponent(name)}`)
     setSelectedSession(target)
     setCurrentView('session')
   }, [
@@ -273,26 +342,35 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
 
   const refocusTerminal = useCallback(() => {
     requestAnimationFrame(() => {
-      const textarea = terminalContainerRef.current?.querySelector('textarea.xterm-helper-textarea') as HTMLTextAreaElement | null
+      if (isEditingOutsideTerminal()) return
+      const textarea = terminalContainerRef.current?.querySelector(
+        'textarea.xterm-helper-textarea',
+      ) as HTMLTextAreaElement | null
       textarea?.focus()
     })
   }, [])
 
-  const jumpToSession = useCallback(async (sessKey: string, windowIndex?: number, pane?: string) => {
-    navigateTo(sessKey, 'session')
-    if (windowIndex !== undefined) {
-      const { host, name } = parseSessionKey(sessKey)
-      try {
-        await postRuntimeMutation('/api/session/select-window', {
-          host_id: host, session: name, window: windowIndex, pane: pane || undefined,
-        })
-      } catch (err) {
-        console.error('Failed to select window:', err)
-        setRuntimeError(err instanceof Error ? err.message : 'The session action failed.')
+  const jumpToSession = useCallback(
+    async (sessKey: string, windowIndex?: number, pane?: string) => {
+      navigateTo(sessKey, 'session')
+      if (windowIndex !== undefined) {
+        const { host, name } = parseSessionKey(sessKey)
+        try {
+          await postRuntimeMutation('/api/session/select-window', {
+            host_id: host,
+            session: name,
+            window: windowIndex,
+            pane: pane || undefined,
+          })
+        } catch (err) {
+          console.error('Failed to select window:', err)
+          setRuntimeError(errorMessage(err))
+        }
       }
-    }
-    setTimeout(() => refocusTerminal(), 200)
-  }, [navigateTo, refocusTerminal])
+      setTimeout(() => refocusTerminal(), 200)
+    },
+    [navigateTo, refocusTerminal],
+  )
 
   const navigateToSettings = useCallback(() => {
     navigateTo(null, 'settings')
@@ -303,51 +381,61 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
     if (selectedSession) refocusTerminal()
   }, [selectedSession, refocusTerminal])
 
-  const handleQuickSwitch = useCallback(async (sessKey: string, windowIndex?: number) => {
-    setQuickSwitcherOpen(false)
-    workspacePreferences.recordRecent(sessKey)
-    navigateTo(sessKey)
-    if (windowIndex !== undefined) {
-      const { host, name } = parseSessionKey(sessKey)
-      try {
-        await postRuntimeMutation('/api/session/select-window', {
-          host_id: host, session: name, window: windowIndex,
-        })
-      } catch (err) {
-        console.error('Failed to select window:', err)
-        setRuntimeError(err instanceof Error ? err.message : 'The session action failed.')
+  const handleQuickSwitch = useCallback(
+    async (sessKey: string, windowIndex?: number) => {
+      setQuickSwitcherOpen(false)
+      workspacePreferences.recordRecent(sessKey)
+      navigateTo(sessKey)
+      if (windowIndex !== undefined) {
+        const { host, name } = parseSessionKey(sessKey)
+        try {
+          await postRuntimeMutation('/api/session/select-window', {
+            host_id: host,
+            session: name,
+            window: windowIndex,
+          })
+        } catch (err) {
+          console.error('Failed to select window:', err)
+          setRuntimeError(errorMessage(err))
+        }
       }
-    }
-    // Refocus after navigation and window switch settle
-    setTimeout(() => refocusTerminal(), 200)
-  }, [navigateTo, refocusTerminal, workspacePreferences])
+      // Refocus after navigation and window switch settle
+      setTimeout(() => refocusTerminal(), 200)
+    },
+    [navigateTo, refocusTerminal, workspacePreferences],
+  )
 
   const openNewSessionModal = useCallback(() => {
     setQuickSwitcherOpen(false)
     setNewSessionModalOpen(true)
   }, [])
 
-  const handleCreateSession = useCallback(async (name: string, hostId: string) => {
-    setNewSessionModalOpen(false)
-    try {
-      await postRuntimeMutation('/api/session/new', {
-        host_id: hostId, session: name,
-      })
-      const sessKey = `${hostId}/${name}`
-      workspacePreferences.recordRecent(sessKey)
-      pendingSessionRef.current = sessKey
-      navigateTo(sessKey)
-      await refresh()
-      window.setTimeout(() => {
-        if (pendingSessionRef.current === sessKey) pendingSessionRef.current = null
-      }, 10_000)
-      setTimeout(() => refocusTerminal(), 300)
-    } catch (err) {
-      console.error('Failed to create session:', err)
-      setRuntimeError(err instanceof Error ? err.message : 'The session action failed.')
-      pendingSessionRef.current = null
-    }
-  }, [navigateTo, refresh, refocusTerminal, workspacePreferences])
+  const handleCreateSession = useCallback(
+    async (name: string, hostId: string, options?: { cwd?: string; agent?: NewSessionAgent }) => {
+      setNewSessionModalOpen(false)
+      try {
+        await postRuntimeMutation('/api/session/new', {
+          host_id: hostId,
+          session: name,
+          ...options,
+        })
+        const sessKey = `${hostId}/${name}`
+        workspacePreferences.recordRecent(sessKey)
+        pendingSessionRef.current = sessKey
+        navigateTo(sessKey)
+        await refresh()
+        window.setTimeout(() => {
+          if (pendingSessionRef.current === sessKey) pendingSessionRef.current = null
+        }, 10_000)
+        setTimeout(() => refocusTerminal(), 300)
+      } catch (err) {
+        console.error('Failed to create session:', err)
+        setRuntimeError(errorMessage(err))
+        pendingSessionRef.current = null
+      }
+    },
+    [navigateTo, refresh, refocusTerminal, workspacePreferences],
+  )
 
   const toggleFullscreen = useCallback(() => {
     setTerminalFullscreen(f => !f)
@@ -373,16 +461,14 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
 
   const showingTerminal = currentView === 'session' && !!selectedSession
   const activeSession = selectedSession
-    ? sessions.find(session => sessionKey(session) === selectedSession) ?? null
+    ? (sessions.find(session => sessionKey(session) === selectedSession) ?? null)
     : null
-  const activeHost = activeSession
-    ? hosts.find(host => host.id === activeSession.host) ?? null
-    : null
+  const activeHost = activeSession ? (hosts.find(host => host.id === activeSession.host) ?? null) : null
   const activeWindow = activeSession?.windows.find(window => window.active)
   const activePane = activeWindow?.panes.find(pane => pane.active)
   const activeToolEvent = selectedSession
-    ? getSessionEvents(selectedSession).find(event => event.status === 'waiting' || event.status === 'error')
-      ?? getSessionEvents(selectedSession)[0]
+    ? (getSessionEvents(selectedSession).find(event => event.status === 'waiting' || event.status === 'error') ??
+      getSessionEvents(selectedSession)[0])
     : undefined
   const retryTerminal = useCallback(() => {
     rehydrate()
@@ -392,63 +478,119 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
     terminalActionsRef.current = actions
   }, [])
 
-  const commandHandlers = useMemo<Partial<Record<CommandId, CommandHandler>>>(() => ({
-    'palette.open': () => setQuickSwitcherOpen(value => !value),
-    'help.open': () => {
-      setQuickSwitcherOpen(false)
-      setHelpOpen(value => !value)
+  const moveSession = useCallback(
+    (offset: number) => {
+      if (!workspace.sessions.length) return
+      const index = workspace.sessions.findIndex(session => session.key === selectedSession)
+      const next =
+        workspace.sessions[
+          index < 0
+            ? offset > 0
+              ? 0
+              : workspace.sessions.length - 1
+            : (index + offset + workspace.sessions.length) % workspace.sessions.length
+        ]
+      void jumpToSession(next.key)
     },
-    'navigation.overview': () => navigateTo(null),
-    'navigation.settings': navigateToSettings,
-    'session.new': openNewSessionModal,
-    'connection.reconnect': () => terminalActionsRef.current?.reconnect(),
-    'terminal.fullscreen': toggleFullscreen,
-    'terminal.zen': toggleZen,
-    'workspace.sidebar.toggle': () => setSidebarCollapsed(value => !value),
-    'attention.next': goToNextAlert,
-    ...(onLogout ? { 'account.sign-out': onLogout } : {}),
-  }), [goToNextAlert, navigateTo, navigateToSettings, onLogout, openNewSessionModal, toggleFullscreen, toggleZen])
+    [workspace.sessions, selectedSession, jumpToSession],
+  )
+  const attentionCount = allToolEvents.filter(e => e.status === 'waiting' || e.status === 'error').length
 
-  const commands = useMemo(() => createCommandRegistry({
-    environment: {
-      hasTerminalTarget: showingTerminal,
-      canReconnect: showingTerminal,
-      canSignOut: Boolean(onLogout),
-      hasAttention: allToolEvents.some(event => event.status === 'waiting' || event.status === 'error'),
-    },
-    handlers: commandHandlers,
-    quickSwitcherShortcut: prefs.quick_switcher_shortcut,
-  }), [allToolEvents, commandHandlers, onLogout, prefs.quick_switcher_shortcut, showingTerminal])
+  const commandHandlers = useMemo<Partial<Record<CommandId, CommandHandler>>>(
+    () => ({
+      'palette.open': () => setQuickSwitcherOpen(value => !value),
+      'help.open': () => {
+        setQuickSwitcherOpen(false)
+        setHelpOpen(value => !value)
+      },
+      'navigation.overview': () => navigateTo(null),
+      'navigation.settings': navigateToSettings,
+      'navigation.monitoring': () => navigateTo(null, 'monitoring'),
+      'navigation.wall': () => navigateTo(null, 'wall'),
+      'session.next': () => moveSession(1),
+      'session.previous': () => moveSession(-1),
+      ...Object.fromEntries(
+        Array.from({ length: 9 }, (_, index) => [
+          `session.select.${index + 1}`,
+          () => {
+            const session = workspace.sessions[index]
+            if (session) void jumpToSession(session.key)
+          },
+        ]),
+      ),
+      'session.new': openNewSessionModal,
+      'connection.reconnect': () => terminalActionsRef.current?.reconnect(),
+      'terminal.fullscreen': toggleFullscreen,
+      'terminal.zen': toggleZen,
+      'workspace.sidebar.toggle': () => setSidebarCollapsed(value => !value),
+      'attention.next': goToNextAlert,
+      ...(onLogout ? { 'account.sign-out': onLogout } : {}),
+    }),
+    [
+      moveSession,
+      workspace.sessions,
+      jumpToSession,
+      goToNextAlert,
+      navigateTo,
+      navigateToSettings,
+      onLogout,
+      openNewSessionModal,
+      toggleFullscreen,
+      toggleZen,
+    ],
+  )
+
+  const commands = useMemo(
+    () =>
+      createCommandRegistry({
+        environment: {
+          hasTerminalTarget: showingTerminal,
+          canReconnect: showingTerminal,
+          canSignOut: Boolean(onLogout),
+          hasAttention: allToolEvents.some(event => event.status === 'waiting' || event.status === 'error'),
+        },
+        handlers: commandHandlers,
+        quickSwitcherShortcut: prefs.quick_switcher_shortcut,
+      }),
+    [allToolEvents, commandHandlers, onLogout, prefs.quick_switcher_shortcut, showingTerminal],
+  )
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const overlayOpen = quickSwitcherOpen || helpOpen || newSessionModalOpen || mobileSidebarOpen
       let scope: CommandScope = overlayOpen ? 'overlay' : 'workspace'
-      if (!overlayOpen && showingTerminal && terminalContainerRef.current?.contains(document.activeElement)) scope = 'terminal'
+      if (!overlayOpen && showingTerminal && terminalContainerRef.current?.contains(document.activeElement))
+        scope = 'terminal'
       dispatchCommandShortcut(event, commands, scope)
     }
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [commands, helpOpen, mobileSidebarOpen, newSessionModalOpen, quickSwitcherOpen, showingTerminal])
 
-  const detachBrowserSession = useCallback((target: string) => {
-    // This intentionally changes only browser navigation. It never calls a
-    // tmux lifecycle mutation, so the underlying Session keeps running.
-    if (selectedSession === target) navigateTo(null)
-    setMobileSidebarOpen(false)
-  }, [navigateTo, selectedSession])
-
-  const killSession = useCallback(async (target: string) => {
-    const { host, name } = parseSessionKey(target)
-    try {
-      await postRuntimeMutation('/api/session/kill', { host_id: host, session: name })
-      workspacePreferences.forgetTarget(target)
+  const detachBrowserSession = useCallback(
+    (target: string) => {
+      // This intentionally changes only browser navigation. It never calls a
+      // tmux lifecycle mutation, so the underlying Session keeps running.
       if (selectedSession === target) navigateTo(null)
-      await refresh()
-    } catch (err) {
-      setRuntimeError(err instanceof Error ? err.message : 'The session action failed.')
-    }
-  }, [navigateTo, refresh, selectedSession, workspacePreferences])
+      setMobileSidebarOpen(false)
+    },
+    [navigateTo, selectedSession],
+  )
+
+  const killSession = useCallback(
+    async (target: string) => {
+      const { host, name } = parseSessionKey(target)
+      try {
+        await postRuntimeMutation('/api/session/kill', { host_id: host, session: name })
+        workspacePreferences.forgetTarget(target)
+        if (selectedSession === target) navigateTo(null)
+        await refresh()
+      } catch (err) {
+        setRuntimeError(errorMessage(err))
+      }
+    },
+    [navigateTo, refresh, selectedSession, workspacePreferences],
+  )
 
   // Dynamic document title
   useEffect(() => {
@@ -457,16 +599,19 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
       const displayName = session ? session.name : parseSessionKey(selectedSession).name
       const activeWindow = session?.windows?.find(w => w.active)
       if (activeWindow) {
-        document.title = `${displayName}:${activeWindow.index}:${activeWindow.name} — TmuxAtlas`
+        document.title = `${displayName}:${activeWindow.index}:${activeWindow.name} — Atlas`
       } else {
-        document.title = `${displayName} — TmuxAtlas`
+        document.title = `${displayName} — Atlas`
       }
     } else if (currentView === 'settings') {
-      document.title = 'settings — TmuxAtlas'
+      document.title = 'Réglages — Atlas'
     } else {
-      document.title = 'TmuxAtlas'
+      document.title =
+        currentView === 'monitoring' ? 'Monitoring — Atlas' : currentView === 'wall' ? 'Mur — Atlas' : 'Atlas'
     }
-  }, [currentView, selectedSession, sessions])
+    if (attentionCount > 0) document.title = `(${attentionCount}) ${document.title}`
+  }, [currentView, selectedSession, sessions, attentionCount])
+  useAttentionBadge(attentionCount)
 
   // Exit fullscreen when navigating away from terminal
   useEffect(() => {
@@ -477,8 +622,8 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
   }, [currentView])
 
   if (
-    applicationState.instanceId === null
-    && (applicationState.connection === 'connecting' || applicationState.connection === 'rehydrating')
+    applicationState.instanceId === null &&
+    (applicationState.connection === 'connecting' || applicationState.connection === 'rehydrating')
   ) {
     return (
       <>
@@ -490,13 +635,10 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
 
   return (
     <div className="app-shell flex flex-col bg-background text-foreground">
-      {(!zenMode
-        || applicationState.connection === 'auth-required'
-        || applicationState.connection === 'reload-required') && (
-        <StateConnectionNotice
-          state={applicationState.connection}
-          onAuthRequired={onLogout}
-        />
+      {(!zenMode ||
+        applicationState.connection === 'auth-required' ||
+        applicationState.connection === 'reload-required') && (
+        <StateConnectionNotice state={applicationState.connection} onAuthRequired={onLogout} />
       )}
       {helpOpen && (
         <Suspense fallback={null}>
@@ -535,21 +677,26 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
       )}
       {/* TopBar - full width */}
       {!zenMode && (!terminalFullscreen || !prefs.fullscreen_hide_alerts) && (
-        <TopBar
-          currentView={currentView}
-          sidebarCollapsed={sidebarCollapsed}
-          onToggleCollapse={() => {
-            if (window.matchMedia('(max-width: 1023px)').matches) setMobileSidebarOpen(open => !open)
-            else setSidebarCollapsed(c => !c)
-          }}
-          onOverview={() => navigateTo(null)}
-          onSettings={navigateToSettings}
-          onNewSession={openNewSessionModal}
-          events={allToolEvents}
-          onJumpToSession={jumpToSession}
-          onDismiss={dismissEvent}
-          onDismissAll={dismissAllEvents}
-        />
+        <div className={showingTerminal ? 'hidden md:block' : ''}>
+          <TopBar
+            currentView={currentView}
+            sidebarCollapsed={sidebarCollapsed}
+            onToggleCollapse={() => {
+              if (window.matchMedia('(max-width: 1023px)').matches) setMobileSidebarOpen(open => !open)
+              else setSidebarCollapsed(c => !c)
+            }}
+            onOverview={() => navigateTo(null)}
+            onMonitoring={() => navigateTo(null, 'monitoring')}
+            onWall={() => navigateTo(null, 'wall')}
+            onOpenPalette={() => setQuickSwitcherOpen(true)}
+            onSettings={navigateToSettings}
+            onNewSession={openNewSessionModal}
+            events={allToolEvents}
+            onJumpToSession={jumpToSession}
+            onDismiss={dismissEvent}
+            onDismissAll={dismissAllEvents}
+          />
+        </div>
       )}
       {/* Middle: Sidebar + Content */}
       <div className="flex-1 flex overflow-hidden">
@@ -585,7 +732,13 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
           />
         )}
         <div className="flex-1 flex flex-col overflow-hidden">
-          <Suspense fallback={<div role="status" className="flex-1 grid place-items-center text-sm text-muted-foreground">Loading view…</div>}>
+          <Suspense
+            fallback={
+              <div role="status" className="flex-1 grid place-items-center text-sm text-muted-foreground">
+                Chargement…
+              </div>
+            }
+          >
             {currentView === 'setup' ? (
               <Setup onComplete={() => navigateTo(null)} />
             ) : currentView === 'settings' ? (
@@ -596,9 +749,40 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
                 onLogout={onLogout}
                 pwaInstall={pwaInstall}
               />
+            ) : currentView === 'monitoring' ? (
+              <MonitoringPage hosts={hosts} />
+            ) : currentView === 'wall' ? (
+              <WallView workspace={workspace} onOpenSession={(key: string) => void jumpToSession(key)} />
             ) : selectedSession ? (
               <div ref={terminalContainerRef} className="flex-1 flex flex-col overflow-hidden">
                 <Terminal
+                  windows={activeSession?.windows}
+                  windowAttention={getSessionEvents(selectedSession).reduce<Record<number, 'error' | 'waiting'>>(
+                    (result, event) => {
+                      if (
+                        event.status === 'error' ||
+                        (event.status === 'waiting' && result[event.window] !== 'error')
+                      ) {
+                        result[event.window] = event.status
+                      }
+                      return result
+                    },
+                    {},
+                  )}
+                  onSelectWindow={index => {
+                    const { host, name } = parseSessionKey(selectedSession)
+                    void selectWindow(host, name, index).catch(err => setRuntimeError(errorMessage(err)))
+                  }}
+                  onSelectPane={pane => {
+                    const { host, name } = parseSessionKey(selectedSession)
+                    void selectPane(host, name, pane).catch(err => setRuntimeError(errorMessage(err)))
+                  }}
+                  onBackToSessions={() => setMobileSidebarOpen(true)}
+                  onPreviousSession={() => moveSession(-1)}
+                  onNextSession={() => moveSession(1)}
+                  attentionCount={attentionCount}
+                  onOpenAlerts={() => navigateTo(null)}
+                  sessionStatus={workspace.byTarget.get(selectedSession)?.status}
                   sessionName={parseSessionKey(selectedSession).name}
                   hostId={parseSessionKey(selectedSession).host}
                   hostName={activeHost?.name || activeSession?.host_name}
@@ -621,10 +805,7 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
                 />
               </div>
             ) : applicationState.connection === 'ready' && sessions.length === 0 ? (
-              <EmptyWorkspaceState
-                onNewSession={openNewSessionModal}
-                onOpenSetup={() => navigateTo(null, 'setup')}
-              />
+              <EmptyWorkspaceState onNewSession={openNewSessionModal} onOpenSetup={() => navigateTo(null, 'setup')} />
             ) : (
               <Overview
                 sessions={sessions}
@@ -635,24 +816,39 @@ function AppInner({ onLogout, pwaInstall }: { onLogout?: () => void; pwaInstall:
                 pendingAlerts={allToolEvents.filter(e => e.status === 'waiting' || e.status === 'error')}
                 onJumpToSession={jumpToSession}
                 onDismissAlert={dismissEvent}
+                onOpenMonitoring={() => navigateTo(null, 'monitoring')}
               />
             )}
           </Suspense>
         </div>
       </div>
+      {!showingTerminal && !zenMode && (
+        <MobileNav
+          currentView={currentView}
+          attentionCount={attentionCount}
+          onOverview={() => navigateTo(null)}
+          onSessions={() => setMobileSidebarOpen(true)}
+          onMonitoring={() => navigateTo(null, 'monitoring')}
+          onSettings={navigateToSettings}
+        />
+      )}
       {/* StatusBar - full width */}
-      {!zenMode && <StatusBar
-        sessionCount={sessions.length}
-        waitingCount={allToolEvents.filter(e => e.status === 'waiting').length}
-        pushState={pushState}
-        version={serverVersion}
-        updateAvailable={updateAvailable}
-        hosts={hosts}
-        agentCount={allToolEvents.filter(e => e.auto_detected || e.status === 'waiting' || e.status === 'error').length}
-        onHelp={() => setHelpOpen(true)}
-        alignSlotToTerminal={!sidebarCollapsed && !terminalFullscreen}
-        onSlotChange={setStatusBarSlot}
-      />}
+      {!zenMode && (
+        <StatusBar
+          sessionCount={sessions.length}
+          waitingCount={allToolEvents.filter(e => e.status === 'waiting').length}
+          pushState={pushState}
+          version={serverVersion}
+          updateAvailable={updateAvailable}
+          hosts={hosts}
+          agentCount={
+            allToolEvents.filter(e => e.auto_detected || e.status === 'waiting' || e.status === 'error').length
+          }
+          onHelp={() => setHelpOpen(true)}
+          alignSlotToTerminal={!sidebarCollapsed && !terminalFullscreen}
+          onSlotChange={setStatusBarSlot}
+        />
+      )}
     </div>
   )
 }
@@ -662,8 +858,16 @@ export default function App() {
   const prefsProvider = usePreferencesProvider()
   const pwaInstall = usePWAInstall()
   const {
-    loading, authRequired, needsSetup, authenticated, error: authError,
-    rpId, origin, setup, login, logout,
+    loading,
+    authRequired,
+    needsSetup,
+    authenticated,
+    error: authError,
+    rpId,
+    origin,
+    setup,
+    login,
+    logout,
   } = useAuth()
   const [showOnboarding, setShowOnboarding] = useState(false)
 
@@ -716,11 +920,16 @@ export default function App() {
   if (authenticated && showOnboarding) {
     return (
       <PreferencesContext.Provider value={prefsProvider}>
-        <Suspense fallback={<WorkspaceLoadingState label="Loading setup" />}>
-          <Setup fullPage onComplete={() => {
-            setShowOnboarding(false)
-            try { setBrandStorage('setup-seen', 'true') } catch {}
-          }} />
+        <Suspense fallback={<WorkspaceLoadingState label="Chargement de la configuration" />}>
+          <Setup
+            fullPage
+            onComplete={() => {
+              setShowOnboarding(false)
+              try {
+                setBrandStorage('setup-seen', 'true')
+              } catch {}
+            }}
+          />
         </Suspense>
       </PreferencesContext.Provider>
     )

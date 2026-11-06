@@ -69,7 +69,7 @@ test.beforeAll(async () => {
   server = spawn(resolve(process.cwd(), '..', 'dist', 'tmuxatlas'), [
     'server', '--listen', '127.0.0.1:17657', '--public-url', baseURL,
     '--discovery-interval', '60', '--no-auth',
-  ], { env: { ...process.env, HOME: testHome } })
+  ], { env: { ...process.env, HOME: testHome, XDG_CONFIG_HOME: join(testHome, 'config'), XDG_DATA_HOME: join(testHome, 'data'), XDG_CACHE_HOME: join(testHome, 'cache'), XDG_RUNTIME_DIR: join(testHome, 'runtime') } })
   await expect.poll(async () => {
     try {
       return (await fetch(`${baseURL}/api/version`)).ok
@@ -151,15 +151,19 @@ async function openSession(
   const viewport = page.viewportSize()
   let navigation: Locator
   if ((viewport?.width ?? 0) < 1024) {
-    await page.getByRole('button', { name: 'Toggle session drawer' }).click()
-    const drawer = page.getByRole('dialog', { name: 'Workspace sessions' })
+    const sessions = page.getByRole('button', { name: 'Sessions', exact: true })
+    const back = page.getByRole('button', { name: 'Retour aux sessions' })
+    await expect(sessions.or(back)).toBeVisible()
+    if (await sessions.isVisible()) await sessions.click()
+    else await back.click()
+    const drawer = page.getByRole('dialog', { name: 'Sessions de l’espace de travail' })
     await expect(drawer).toBeVisible()
     navigation = drawer
   } else {
-    navigation = page.getByRole('navigation', { name: 'Host and session navigation' })
+    navigation = page.getByRole('navigation', { name: 'Navigation des hôtes et sessions' })
   }
   await navigation.getByRole('button', {
-    name: new RegExp(`^Open ${hostName} session ${sessionName},`, 'i'),
+    name: new RegExp(`^Ouvrir la session ${sessionName} sur ${hostName},`, 'i'),
   }).click()
   await expect(page).toHaveURL(
     `${baseURL}/session/${encodeURIComponent(hostId)}/${encodeURIComponent(sessionName)}`,
@@ -167,9 +171,9 @@ async function openSession(
 }
 
 async function expandComposer(page: Page): Promise<Locator> {
-  const expand = page.getByRole('button', { name: 'Expand Mobile Input Composer' })
-  if (await expand.isVisible()) await expand.click()
-  const textarea = page.getByRole('textbox', { name: /^Command draft for / })
+  const expand = page.getByRole('button', { name: 'Composer un message' })
+  if (await expand.getAttribute('aria-expanded') !== 'true') await expand.click()
+  const textarea = page.getByRole('textbox', { name: /^Brouillon pour / })
   await expect(textarea).toBeVisible()
   return textarea
 }
@@ -191,7 +195,7 @@ async function sendComposerValue({
 }) {
   await textarea.fill(value)
   const mark = capture.mark()
-  await page.getByRole('button', { name: /^Send command to / }).click()
+  await page.getByRole('button', { name: /^Envoyer la commande à / }).click()
   const frames = await capture.waitForInputFrames({
     target,
     generation,
@@ -434,8 +438,8 @@ test('same-name cross-Host drafts and connection generations never leak PTY inpu
   await textarea.fill(raceValue)
   await armGenerationRace(page, raceValue)
   const mark = pty.mark()
-  await page.getByRole('button', { name: /^Send command to / }).click()
-  await expect(page.getByRole('alert')).toContainText('Terminal rejected the input frame.')
+  await page.getByRole('button', { name: /^Envoyer la commande à / }).click()
+  await expect(page.getByRole('alert')).toContainText('Le terminal a refusé la saisie.')
   await expect(textarea).toHaveValue(raceValue)
 
   await currentB.socket.close({
@@ -460,6 +464,7 @@ test('Drawer, Palette, Terminal toolbar and Composer stay within mobile visual v
   await mockWorkspace(page, singleHostWorkspace)
   await capturePTY(page)
   await page.goto(baseURL)
+  await setMockVisualViewport(page, { width: 390, height: 844, offsetLeft: 0, offsetTop: 0 })
   await openSession(page, 'phone-agent', 'host-a', 'demo')
 
   const sizes = [
@@ -481,9 +486,9 @@ test('Drawer, Palette, Terminal toolbar and Composer stay within mobile visual v
       offsetTop: 0,
     })
 
-    if (size.width < 1024) {
-      await page.getByRole('button', { name: 'Toggle session drawer' }).click()
-      const drawer = page.getByRole('dialog', { name: 'Workspace sessions' })
+    if (size.width < 768) {
+      await page.getByRole('button', { name: 'Retour aux sessions' }).click()
+      const drawer = page.getByRole('dialog', { name: 'Sessions de l’espace de travail' })
       await expectInsideVisualViewport(
         drawer,
         `${size.width}×${size.height} Drawer`,
@@ -501,24 +506,24 @@ test('Drawer, Palette, Terminal toolbar and Composer stay within mobile visual v
       }
       await page.keyboard.press('Escape')
       await expect(drawer).toBeHidden()
-    } else {
-      await expectInsideVisualViewport(
-        page.locator('aside[aria-label="Workspace sessions"]'),
-        `${size.width}×${size.height} Sidebar`,
-      )
     }
 
     await page.keyboard.press(`${primaryModifier}+k`)
-    const palette = page.getByRole('dialog', { name: 'Command Palette' })
+    const palette = page.getByRole('dialog', { name: 'Rechercher' })
     await expectInsideVisualViewport(
       palette,
       `${size.width}×${size.height} Palette`,
       safeArea,
       { top: true, right: true, bottom: true, left: true },
     )
-    await page.getByRole('button', { name: 'Close Command Palette' }).click()
+    await page.getByRole('button', { name: 'Fermer la recherche' }).click()
 
-    const toolbar = page.getByRole('toolbar', { name: 'Terminal keys' })
+    if (size.width >= 768) {
+      await expectInsideVisualViewport(page.locator('.terminal-cockpit__header'), 'Cockpit')
+      continue
+    }
+
+    const toolbar = page.getByRole('toolbar', { name: 'Touches du terminal' })
     await expectInsideVisualViewport(
       toolbar,
       `${size.width}×${size.height} Terminal toolbar`,
@@ -526,7 +531,7 @@ test('Drawer, Palette, Terminal toolbar and Composer stay within mobile visual v
       { right: true, left: true },
     )
     const textarea = await expandComposer(page)
-    const sendButton = page.getByRole('button', { name: /^Send command to / })
+    const sendButton = page.getByRole('button', { name: /^Envoyer la commande à / })
     const sendSize = await sendButton.evaluate(element => {
       const rect = element.getBoundingClientRect()
       return { width: rect.width, height: rect.height }
@@ -534,7 +539,6 @@ test('Drawer, Palette, Terminal toolbar and Composer stay within mobile visual v
     expect(sendSize.width).toBeGreaterThanOrEqual(44)
     expect(sendSize.height).toBeGreaterThanOrEqual(44)
 
-    await page.getByRole('button', { name: 'Hide terminal keys' }).click()
     await textarea.focus()
     await setMockVisualViewport(page, {
       width: size.width - 8,
@@ -543,21 +547,21 @@ test('Drawer, Palette, Terminal toolbar and Composer stay within mobile visual v
       offsetTop: 8,
     })
     await expectInsideVisualViewport(
-      page.getByRole('button', { name: 'Show terminal keys' }),
-      `${size.width}×${size.height} collapsed toolbar with software keyboard`,
+      toolbar,
+      `${size.width}×${size.height} toolbar with software keyboard`,
       safeArea,
       { right: true, bottom: true, left: true },
     )
     await expectInsideVisualViewport(
-      page.getByRole('button', { name: 'Collapse Mobile Input Composer' }).locator('..'),
+      textarea.locator('..').locator('..'),
       `${size.width}×${size.height} Composer with software keyboard`,
       safeArea,
       { right: true, bottom: true, left: true },
     )
 
-    if (size.width < 1024) {
-      await page.getByRole('button', { name: 'Toggle session drawer' }).click()
-      const drawer = page.getByRole('dialog', { name: 'Workspace sessions' })
+    if (size.width < 768) {
+      await page.getByRole('button', { name: 'Retour aux sessions' }).click()
+      const drawer = page.getByRole('dialog', { name: 'Sessions de l’espace de travail' })
       await expectInsideVisualViewport(
         drawer,
         `${size.width}×${size.height} Drawer with software keyboard`,
@@ -570,12 +574,12 @@ test('Drawer, Palette, Terminal toolbar and Composer stay within mobile visual v
 
     await page.keyboard.press(`${primaryModifier}+k`)
     await expectInsideVisualViewport(
-      page.getByRole('dialog', { name: 'Command Palette' }),
+      page.getByRole('dialog', { name: 'Rechercher' }),
       `${size.width}×${size.height} Palette with software keyboard`,
       safeArea,
       { top: true, right: true, bottom: true, left: true },
     )
-    await page.getByRole('button', { name: 'Close Command Palette' }).click()
+    await page.getByRole('button', { name: 'Fermer la recherche' }).click()
     await expectNoShellOverflow(page)
 
     await setMockVisualViewport(page, {
@@ -584,7 +588,7 @@ test('Drawer, Palette, Terminal toolbar and Composer stay within mobile visual v
       offsetLeft: 0,
       offsetTop: 0,
     })
-    await page.getByRole('button', { name: 'Show terminal keys' }).click()
+    await page.getByRole('button', { name: 'Replier', exact: true }).click()
   }
 
   await page.setViewportSize({ width: 390, height: 844 })

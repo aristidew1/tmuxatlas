@@ -1,9 +1,9 @@
 {
   "id": "/",
-  "name": "TmuxAtlas",
-  "short_name": "TmuxAtlas",
-  "description": "Monitor and control tmux sessions and AI coding agents from one secure interface.",
-  "lang": "en",
+  "name": "Atlas",
+  "short_name": "Atlas",
+  "description": "Surveillez et pilotez vos sessions tmux et vos agents depuis une interface sécurisée.",
+  "lang": "fr",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -38,6 +38,41 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Vue d'ensemble",
+      "url": "/",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Mur",
+      "url": "/wall",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Monitoring",
+      "url": "/monitoring",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
     }
   ]
 }

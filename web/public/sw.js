@@ -1,6 +1,6 @@
 const DEFAULT_NOTIFICATION = {
-  title: 'TmuxAtlas',
-  body: 'A TmuxAtlas session needs your attention.',
+  title: 'Atlas',
+  body: 'Une session Atlas nécessite votre attention.',
   url: '/',
 }
 

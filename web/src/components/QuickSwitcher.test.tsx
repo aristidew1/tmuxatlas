@@ -16,8 +16,25 @@ afterEach(cleanup)
 
 function session(host: string, hostName: string): Session {
   return {
-    id: `${host}-work`, host, host_name: hostName, host_online: true, name: 'work', created: '', attached: false, last_activity: '',
-    windows: [{ id: `${host}-window`, session_id: `${host}-work`, name: 'shell', index: 0, active: true, layout: '', panes: [] }],
+    id: `${host}-work`,
+    host,
+    host_name: hostName,
+    host_online: true,
+    name: 'work',
+    created: '',
+    attached: false,
+    last_activity: '',
+    windows: [
+      {
+        id: `${host}-window`,
+        session_id: `${host}-work`,
+        name: 'shell',
+        index: 0,
+        active: true,
+        layout: '',
+        panes: [],
+      },
+    ],
   }
 }
 
@@ -44,18 +61,31 @@ function commands(overrides: { hasTerminalTarget?: boolean; overview?: () => voi
   })
 }
 
-describe('Command Palette', () => {
+describe('Palette de commandes', () => {
   it('exposes dialog, combobox, grouped listbox and stable cross-Host targets', async () => {
     const select = vi.fn()
-    renderStrict(<QuickSwitcher workspace={workspace} commands={commands()} pinnedTargets={[]} recentTargets={[]} onSelect={select} onClose={vi.fn()} />)
-    expect(screen.getByRole('dialog', { name: 'Command Palette' })).toBeInTheDocument()
+    renderStrict(
+      <QuickSwitcher
+        workspace={workspace}
+        commands={commands()}
+        pinnedTargets={[]}
+        recentTargets={[]}
+        onSelect={select}
+        onClose={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole('dialog', { name: 'Rechercher' })).toBeInTheDocument()
     expect(screen.getByRole('combobox')).toHaveAttribute('aria-controls', 'command-palette-results')
     expect(screen.getByRole('listbox')).toBeInTheDocument()
 
     await userEvent.type(screen.getByRole('combobox'), 'work')
-    const results = screen.getAllByRole('option').filter(option => option.textContent?.startsWith('work') && !option.textContent.includes('/ shell'))
+    const results = screen
+      .getAllByRole('option')
+      .filter(option => option.textContent?.startsWith('work') && !option.textContent.includes('/ shell'))
     expect(results).toHaveLength(2)
-    expect(results.map(option => option.textContent)).toEqual(expect.arrayContaining([expect.stringContaining('Alpha'), expect.stringContaining('Beta')]))
+    expect(results.map(option => option.textContent)).toEqual(
+      expect.arrayContaining([expect.stringContaining('Alpha'), expect.stringContaining('Beta')]),
+    )
     await userEvent.click(results.find(option => option.textContent?.includes('Beta'))!)
     expect(select).toHaveBeenCalledWith('host-b/work', undefined)
   })
@@ -66,9 +96,18 @@ describe('Command Palette', () => {
       environment: { hasTerminalTarget: false, canReconnect: false, canSignOut: false, hasAttention: false },
       handlers: { 'palette.open': vi.fn(), 'connection.reconnect': reconnect },
     })
-    renderStrict(<QuickSwitcher workspace={workspace} commands={disabledCommands} pinnedTargets={[]} recentTargets={[]} onSelect={vi.fn()} onClose={vi.fn()} />)
-    await userEvent.type(screen.getByRole('combobox'), 'Reconnect Terminal')
-    const option = screen.getByRole('option', { name: /Reconnect Terminal/ })
+    renderStrict(
+      <QuickSwitcher
+        workspace={workspace}
+        commands={disabledCommands}
+        pinnedTargets={[]}
+        recentTargets={[]}
+        onSelect={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+    await userEvent.type(screen.getByRole('combobox'), 'Reconnecter le terminal')
+    const option = screen.getByRole('option', { name: /Reconnecter le terminal/ })
     expect(option).toHaveAttribute('aria-disabled', 'true')
     await userEvent.click(option)
     expect(reconnect).not.toHaveBeenCalled()
@@ -78,9 +117,18 @@ describe('Command Palette', () => {
     const overview = vi.fn()
     const close = vi.fn()
     const select = vi.fn()
-    renderStrict(<QuickSwitcher workspace={workspace} commands={commands({ overview })} pinnedTargets={[]} recentTargets={[]} onSelect={select} onClose={close} />)
+    renderStrict(
+      <QuickSwitcher
+        workspace={workspace}
+        commands={commands({ overview })}
+        pinnedTargets={[]}
+        recentTargets={[]}
+        onSelect={select}
+        onClose={close}
+      />,
+    )
     const input = screen.getByRole('combobox')
-    await userEvent.type(input, 'Go to Overview')
+    await userEvent.type(input, 'Vue d’ensemble')
     fireEvent.keyDown(input, { key: 'Enter' })
     expect(close).toHaveBeenCalledTimes(1)
     expect(overview).toHaveBeenCalledTimes(1)
@@ -92,8 +140,19 @@ describe('Command Palette', () => {
       const [open, setOpen] = useState(false)
       return (
         <>
-          <button type="button" onClick={() => setOpen(true)}>Open palette</button>
-          {open && <QuickSwitcher workspace={workspace} commands={commands()} pinnedTargets={[]} recentTargets={[]} onSelect={vi.fn()} onClose={() => setOpen(false)} />}
+          <button type="button" onClick={() => setOpen(true)}>
+            Open palette
+          </button>
+          {open && (
+            <QuickSwitcher
+              workspace={workspace}
+              commands={commands()}
+              pinnedTargets={[]}
+              recentTargets={[]}
+              onSelect={vi.fn()}
+              onClose={() => setOpen(false)}
+            />
+          )}
         </>
       )
     }
@@ -106,8 +165,43 @@ describe('Command Palette', () => {
   })
 
   it('uses the same ARIA contract in the mobile bottom-sheet shell', () => {
-    renderStrict(<QuickSwitcher workspace={workspace} commands={commands()} pinnedTargets={[]} recentTargets={[]} onSelect={vi.fn()} onClose={vi.fn()} />)
+    renderStrict(
+      <QuickSwitcher
+        workspace={workspace}
+        commands={commands()}
+        pinnedTargets={[]}
+        recentTargets={[]}
+        onSelect={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
     expect(screen.getByRole('dialog')).toHaveClass('command-palette-dialog')
     expect(screen.getByRole('combobox')).toHaveAttribute('aria-expanded', 'true')
+  })
+  it('distingue les erreurs des attentes par leur icône', () => {
+    const events = [
+      { host: 'host-a', session: 'work', window: 0, tool: 'agent', status: 'error' as const, timestamp: '' },
+      { host: 'host-b', session: 'work', window: 0, tool: 'agent', status: 'waiting' as const, timestamp: '' },
+    ]
+    const model = buildWorkspaceViewModel(sessions, events, new Map(), hosts)
+    renderStrict(
+      <QuickSwitcher
+        workspace={model}
+        commands={[]}
+        pinnedTargets={[]}
+        recentTargets={[]}
+        onSelect={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+    const options = screen
+      .getAllByRole('option')
+      .filter(option => option.textContent?.startsWith('work') && !option.textContent.includes('/ shell'))
+    expect(
+      options.find(option => option.textContent?.includes('Alpha'))?.querySelector('[data-status="error"]'),
+    ).toBeInTheDocument()
+    expect(
+      options.find(option => option.textContent?.includes('Beta'))?.querySelector('[data-status="waiting"]'),
+    ).toBeInTheDocument()
   })
 })

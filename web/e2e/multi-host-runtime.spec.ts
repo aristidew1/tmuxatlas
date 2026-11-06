@@ -9,9 +9,6 @@ const primaryModifier = process.platform === 'darwin' ? 'Meta' : 'Control'
 let server: ChildProcessWithoutNullStreams
 let testHome: string
 
-test.use({
-  channel: process.env.CI ? undefined : 'chrome',
-})
 
 const localHost = { id: 'local-host', name: 'local', local: true, online: true, sessions: [], last_seen: new Date().toISOString() }
 const remoteHost = { id: 'remote-host', name: 'remote', local: false, online: true, sessions: [], last_seen: new Date().toISOString() }
@@ -40,7 +37,7 @@ test.beforeAll(async () => {
   server = spawn(binary, [
     'server', '--listen', '127.0.0.1:17656', '--public-url', baseURL,
     '--discovery-interval', '60', '--no-auth',
-  ], { env: { ...process.env, HOME: testHome } })
+  ], { env: { ...process.env, HOME: testHome, XDG_CONFIG_HOME: join(testHome, 'config'), XDG_DATA_HOME: join(testHome, 'data'), XDG_CACHE_HOME: join(testHome, 'cache'), XDG_RUNTIME_DIR: join(testHome, 'runtime') } })
   await waitForServer()
 })
 
@@ -117,7 +114,7 @@ test('keeps same-name sessions bound to explicit hosts and surfaces structured e
   await page.goto(baseURL)
 
   const remoteSession = page.getByRole('button', {
-    name: /^Open remote session same,/,
+    name: /^Ouvrir la session same sur remote,/,
   })
   await remoteSession.click()
   await expect(page).toHaveURL(`${baseURL}/session/remote-host/same`)
@@ -134,7 +131,7 @@ test('keeps same-name sessions bound to explicit hosts and surfaces structured e
   ).toString().includes('typed')).toBe(true)
 
   await page.keyboard.press(`${primaryModifier}+k`)
-  const palette = page.getByRole('dialog', { name: 'Command Palette' })
+  const palette = page.getByRole('dialog', { name: 'Rechercher' })
   await palette.getByRole('combobox').fill('remote editor')
   await palette.getByRole('option')
     .filter({ hasText: 'same / editor' })
@@ -145,19 +142,21 @@ test('keeps same-name sessions bound to explicit hosts and surfaces structured e
   })
 
   await remoteSession.click({ button: 'right' })
-  await page.getByRole('menuitem', { name: 'Rename' }).click()
-  const renameInput = page.getByRole('textbox', { name: 'Rename same' })
+  await page.getByRole('menuitem', { name: 'Renommer' }).click()
+  const renameInput = page.getByRole('textbox', { name: 'Renommer same' })
   await renameInput.fill('renamed')
   await renameInput.press('Enter')
+  expect(Buffer.concat(terminalFrames.filter((frame): frame is Buffer => Buffer.isBuffer(frame))).toString())
+    .not.toContain('renamed')
   await expect.poll(() => mutations.find(entry => entry.path.endsWith('/rename'))?.body).toEqual({
     host_id: 'remote-host', session: 'same', new_name: 'renamed',
   })
   await expect(page).toHaveURL(`${baseURL}/session/remote-host/renamed`)
 
-  await page.getByTitle('New session').click()
-  await page.getByPlaceholder('Session name...').fill('created')
-  await page.getByRole('combobox', { name: 'Host' }).selectOption('remote-host')
-  await page.getByRole('button', { name: 'Create' }).click()
+  await page.getByTitle('Nouvelle session').click()
+  await page.getByPlaceholder('Nom de la session').fill('created')
+  await page.getByRole('combobox', { name: 'Hôte' }).selectOption('remote-host')
+  await page.getByRole('button', { name: 'Créer' }).click()
   await expect.poll(() => mutations.find(entry => entry.path.endsWith('/new'))?.body).toEqual({
     host_id: 'remote-host', session: 'created',
   })
@@ -165,14 +164,14 @@ test('keeps same-name sessions bound to explicit hosts and surfaces structured e
   rejectRename = true
   await page.goto(baseURL)
   const localSession = page.getByRole('button', {
-    name: /^Open local session same,/,
+    name: /^Ouvrir la session same sur local,/,
   })
   await localSession.click({ button: 'right' })
-  await page.getByRole('menuitem', { name: 'Rename' }).click()
-  const failedRenameInput = page.getByRole('textbox', { name: 'Rename same' })
+  await page.getByRole('menuitem', { name: 'Renommer' }).click()
+  const failedRenameInput = page.getByRole('textbox', { name: 'Renommer same' })
   await failedRenameInput.fill('will-fail')
   await failedRenameInput.press('Enter')
-  await expect(page.getByText('The selected host is offline.')).toBeVisible()
+  await expect(page.getByText('L’hôte sélectionné est hors ligne.')).toBeVisible()
   const failed = mutations.filter(entry => entry.path.endsWith('/rename')).at(-1)
   expect(failed?.body).toEqual({
     host_id: 'local-host', session: 'same', new_name: 'will-fail',

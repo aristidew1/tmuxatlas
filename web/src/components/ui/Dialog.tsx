@@ -1,11 +1,5 @@
-import {
-  useEffect,
-  useId,
-  useRef,
-  type KeyboardEvent,
-  type ReactNode,
-  type RefObject,
-} from 'react'
+import { X } from 'lucide-react'
+import { useEffect, useId, useRef, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '../../lib/utils'
 import { IconButton } from './IconButton'
@@ -30,7 +24,7 @@ interface ModalFrameProps {
 function ModalFrame({
   children,
   className,
-  closeLabel = 'Close',
+  closeLabel = 'Fermer',
   closeOnBackdrop = true,
   description,
   footer,
@@ -113,7 +107,7 @@ function ModalFrame({
       className="ui-overlay-root"
       data-ui-overlay-root=""
       onKeyDown={handleKeyDown}
-      onMouseDown={(event) => {
+      onMouseDown={event => {
         if (closeOnBackdrop && event.target === event.currentTarget) close()
       }}
     >
@@ -129,13 +123,17 @@ function ModalFrame({
       >
         <header className="ui-overlay__header">
           <div>
-            <h2 id={titleId} className="ui-overlay__title">{title}</h2>
+            <h2 id={titleId} className="ui-overlay__title">
+              {title}
+            </h2>
             {description && (
-              <p id={descriptionId} className="ui-overlay__description">{description}</p>
+              <p id={descriptionId} className="ui-overlay__description">
+                {description}
+              </p>
             )}
           </div>
           <IconButton aria-label={closeLabel} size="sm" onClick={close}>
-            <span aria-hidden="true">×</span>
+            <X size={16} aria-hidden="true" />
           </IconButton>
         </header>
         <div className="ui-overlay__body">{children}</div>

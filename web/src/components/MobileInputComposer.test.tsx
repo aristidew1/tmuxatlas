@@ -13,7 +13,7 @@ function renderComposer(onSend = vi.fn<() => void | Promise<void>>()) {
       onSend={onSend}
     />,
   )
-  fireEvent.click(screen.getByRole('button', { name: 'Expand Mobile Input Composer' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Ouvrir le compositeur' }))
   return { onSend, onDraftChange, ...view }
 }
 
@@ -29,7 +29,7 @@ describe('MobileInputComposer boundaries', () => {
 
   it('allows an empty submission as a physical Enter equivalent', async () => {
     const { onSend } = renderComposer()
-    fireEvent.click(screen.getByRole('button', { name: 'Send command to host-a/work' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Envoyer la commande à host-a/work' }))
     await waitFor(() => expect(onSend).toHaveBeenCalledWith(''))
   })
 
@@ -37,7 +37,7 @@ describe('MobileInputComposer boundaries', () => {
     const { onSend } = renderComposer()
     const value = 'x'.repeat(65_535)
     fireEvent.change(screen.getByRole('textbox'), { target: { value } })
-    fireEvent.click(screen.getByRole('button', { name: 'Send command to host-a/work' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Envoyer la commande à host-a/work' }))
     await waitFor(() => expect(onSend).toHaveBeenCalledWith(value))
   })
 
@@ -47,7 +47,7 @@ describe('MobileInputComposer boundaries', () => {
     const textarea = screen.getByRole('textbox')
     fireEvent.change(textarea, { target: { value } })
     expect(screen.getByRole('alert')).toHaveTextContent('65,535')
-    expect(screen.getByRole('button', { name: 'Send command to host-a/work' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Envoyer la commande à host-a/work' })).toBeDisabled()
     expect(textarea).toHaveValue(value)
     expect(onSend).not.toHaveBeenCalled()
   })
@@ -58,20 +58,23 @@ describe('MobileInputComposer boundaries', () => {
     const textarea = screen.getByRole('textbox')
     expect(textarea).toHaveFocus()
     fireEvent.change(textarea, { target: { value: 'keep this' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Send command to host-a/work' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Envoyer la commande à host-a/work' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Socket closed.')
     expect(textarea).toHaveValue('keep this')
   })
 
   it('does not clear text entered while an earlier draft is sending', async () => {
     let resolveSend!: () => void
-    const onSend = vi.fn(() => new Promise<void>(resolve => {
-      resolveSend = resolve
-    }))
+    const onSend = vi.fn(
+      () =>
+        new Promise<void>(resolve => {
+          resolveSend = resolve
+        }),
+    )
     renderComposer(onSend)
     const textarea = screen.getByRole('textbox')
     fireEvent.change(textarea, { target: { value: 'first' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Send command to host-a/work' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Envoyer la commande à host-a/work' }))
     expect(onSend).toHaveBeenCalledWith('first')
 
     fireEvent.change(textarea, { target: { value: 'typed while sending' } })
@@ -88,10 +91,7 @@ describe('MobileInputComposer boundaries', () => {
 
     fireEvent.blur(textarea)
 
-    expect(onDraftChange).toHaveBeenCalledWith(
-      '["host-a","work"]',
-      'draft before navigation',
-    )
+    expect(onDraftChange).toHaveBeenCalledWith('["host-a","work"]', 'draft before navigation')
   })
 
   it('flushes the DOM value when WebKit unmounts before React commits the change', () => {
@@ -102,10 +102,7 @@ describe('MobileInputComposer boundaries', () => {
 
     unmount()
 
-    expect(onDraftChange).toHaveBeenCalledWith(
-      '["host-a","work"]',
-      'native value pending at unmount',
-    )
+    expect(onDraftChange).toHaveBeenCalledWith('["host-a","work"]', 'native value pending at unmount')
   })
 
   it('submits the DOM value when WebKit clicks Send before React commits the change', async () => {
@@ -113,7 +110,7 @@ describe('MobileInputComposer boundaries', () => {
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
     textarea.value = 'native value pending at send'
 
-    fireEvent.click(screen.getByRole('button', { name: 'Send command to host-a/work' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Envoyer la commande à host-a/work' }))
 
     await waitFor(() => expect(onSend).toHaveBeenCalledWith('native value pending at send'))
   })

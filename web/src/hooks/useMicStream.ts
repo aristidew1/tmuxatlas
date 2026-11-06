@@ -27,29 +27,35 @@ const MAX_BUFFERED_BYTES = 32 * 1024
 const MIC_OFF_KEY = 'tmuxatlas.mic.off'
 
 function micErrorMessage(error: unknown): string {
-  if (!window.isSecureContext) return 'The microphone needs HTTPS or localhost.'
+  if (!window.isSecureContext) return 'Le micro nécessite HTTPS ou localhost.'
   if (error instanceof DOMException) {
-    if (error.name === 'NotAllowedError') return 'Microphone access was denied in this browser.'
-    if (error.name === 'NotFoundError') return 'This device has no microphone.'
+    if (error.name === 'NotAllowedError') return 'L’accès au micro a été refusé par le navigateur.'
+    if (error.name === 'NotFoundError') return 'Cet appareil ne dispose pas de micro.'
   }
-  return error instanceof Error ? error.message : 'The microphone could not be started.'
+  return 'Impossible de démarrer le micro.'
 }
 
 async function fetchVoiceStatus(): Promise<VoiceStatus> {
   const response = await apiFetch('/api/voice')
   if (!response.ok) return { enabled: false, ready: false }
-  return await response.json() as VoiceStatus
+  return (await response.json()) as VoiceStatus
 }
 
 function isMicTurnedOff(): boolean {
-  try { return localStorage.getItem(MIC_OFF_KEY) === '1' } catch { return false }
+  try {
+    return localStorage.getItem(MIC_OFF_KEY) === '1'
+  } catch {
+    return false
+  }
 }
 
 function rememberMicTurnedOff(off: boolean) {
   try {
     if (off) localStorage.setItem(MIC_OFF_KEY, '1')
     else localStorage.removeItem(MIC_OFF_KEY)
-  } catch { /* storage unavailable: the microphone turns on next time */ }
+  } catch {
+    /* storage unavailable: the microphone turns on next time */
+  }
 }
 
 /**
@@ -68,9 +74,15 @@ export function useMicStream(allowed: boolean) {
     if (!allowed) return
     let cancelled = false
     fetchVoiceStatus()
-      .then(status => { if (!cancelled) setEnabled(status.enabled) })
-      .catch(() => { if (!cancelled) setEnabled(false) })
-    return () => { cancelled = true }
+      .then(status => {
+        if (!cancelled) setEnabled(status.enabled)
+      })
+      .catch(() => {
+        if (!cancelled) setEnabled(false)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [allowed])
 
   const stop = useCallback(() => {
@@ -86,7 +98,11 @@ export function useMicStream(allowed: boolean) {
     const cleanups: (() => void)[] = []
     const cleanup = () => {
       for (const run of cleanups.splice(0).reverse()) {
-        try { run() } catch { /* already released */ }
+        try {
+          run()
+        } catch {
+          /* already released */
+        }
       }
     }
     const fail = (message: string) => {
@@ -105,7 +121,7 @@ export function useMicStream(allowed: boolean) {
       if (!isCurrent()) return
       if (status.error) throw new Error(status.error)
       if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error('The microphone needs HTTPS or localhost.')
+        throw new Error('Le micro nécessite HTTPS ou localhost.')
       }
 
       const media = await navigator.mediaDevices.getUserMedia({
@@ -125,7 +141,9 @@ export function useMicStream(allowed: boolean) {
       if (!isCurrent()) return cleanup()
       // Starting without a click can leave audio suspended until the next gesture.
       if (context.state !== 'running') {
-        const resume = () => { void context.resume() }
+        const resume = () => {
+          void context.resume()
+        }
         const gestures = ['pointerdown', 'keydown']
         resume()
         for (const gesture of gestures) document.addEventListener(gesture, resume, { capture: true })
@@ -143,7 +161,7 @@ export function useMicStream(allowed: boolean) {
       })
       await new Promise<void>((resolve, reject) => {
         socket.onopen = () => resolve()
-        socket.onerror = () => reject(new Error('The server refused the microphone stream.'))
+        socket.onerror = () => reject(new Error('Le serveur a refusé le flux du micro.'))
       })
       if (!isCurrent()) return cleanup()
 
@@ -164,10 +182,10 @@ export function useMicStream(allowed: boolean) {
       })
 
       socket.onclose = event => {
-        fail(event.reason || 'The microphone stream was interrupted.')
+        fail(event.reason || 'Le flux du micro a été interrompu.')
       }
       for (const track of media.getAudioTracks()) {
-        track.onended = () => fail('The browser stopped the microphone.')
+        track.onended = () => fail('Le navigateur a arrêté le micro.')
       }
       setState('on')
     } catch (startError) {

@@ -1,12 +1,5 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react'
+import { X } from 'lucide-react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { IconButton } from './IconButton'
 
@@ -49,8 +42,8 @@ export function Toast({ description, id, onDismiss, title, variant }: ToastProps
         <div className="ui-toast__title">{title}</div>
         {description && <div className="ui-toast__description">{description}</div>}
       </div>
-      <IconButton aria-label="Dismiss notification" size="sm" onClick={() => onDismiss(id)}>
-        <span aria-hidden="true">×</span>
+      <IconButton aria-label="Ignorer la notification" size="sm" onClick={() => onDismiss(id)}>
+        <X size={16} aria-hidden="true" />
       </IconButton>
     </section>
   )
@@ -65,34 +58,46 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     const timer = timersRef.current.get(id)
     if (timer !== undefined) window.clearTimeout(timer)
     timersRef.current.delete(id)
-    setToasts((current) => current.filter((item) => item.id !== id))
+    setToasts(current => current.filter(item => item.id !== id))
   }, [])
 
-  const toast = useCallback((options: ToastOptions) => {
-    const id = `toast-${++counterRef.current}`
-    const record: ToastRecord = { ...options, id, variant: options.variant ?? 'info' }
-    setToasts((current) => [...current, record])
-    const duration = options.duration ?? 5000
-    if (duration > 0 && Number.isFinite(duration)) {
-      timersRef.current.set(id, window.setTimeout(() => dismiss(id), duration))
-    }
-    return id
-  }, [dismiss])
+  const toast = useCallback(
+    (options: ToastOptions) => {
+      const id = `toast-${++counterRef.current}`
+      const record: ToastRecord = { ...options, id, variant: options.variant ?? 'info' }
+      setToasts(current => [...current, record])
+      const duration = options.duration ?? 5000
+      if (duration > 0 && Number.isFinite(duration)) {
+        timersRef.current.set(
+          id,
+          window.setTimeout(() => dismiss(id), duration),
+        )
+      }
+      return id
+    },
+    [dismiss],
+  )
 
-  useEffect(() => () => {
-    for (const timer of timersRef.current.values()) window.clearTimeout(timer)
-    timersRef.current.clear()
-  }, [])
+  useEffect(
+    () => () => {
+      for (const timer of timersRef.current.values()) window.clearTimeout(timer)
+      timersRef.current.clear()
+    },
+    [],
+  )
 
   return (
     <ToastContext.Provider value={{ dismiss, toast }}>
       {children}
-      {typeof document !== 'undefined' && createPortal(
-        <div className="ui-toast-viewport" aria-label="Notifications">
-          {toasts.map((item) => <Toast key={item.id} {...item} onDismiss={dismiss} />)}
-        </div>,
-        document.body,
-      )}
+      {typeof document !== 'undefined' &&
+        createPortal(
+          <div className="ui-toast-viewport" aria-label="Notifications">
+            {toasts.map(item => (
+              <Toast key={item.id} {...item} onDismiss={dismiss} />
+            ))}
+          </div>,
+          document.body,
+        )}
     </ToastContext.Provider>
   )
 }

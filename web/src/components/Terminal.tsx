@@ -1,25 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import {
-  useTerminal,
-  type PendingTerminalPaste,
-} from '../hooks/useTerminal'
-import {
-  useTerminalDrafts,
-  type TerminalDraftStore,
-} from '../hooks/useTerminalDrafts'
-import {
-  MobileTerminalInput,
-  terminalKeys,
-  type ModifierName,
-  type ModifierState,
-} from '../lib/mobileTerminalInput'
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Keyboard, Mic, Pencil } from 'lucide-react'
+import { useMediaQuery, COMPACT_LAYOUT_QUERY } from '../lib/useMediaQuery'
+import { useHostLabel } from '../lib/hostLabel'
+import type { Window as SessionWindow } from '../hooks/useSessions'
+import type { WorkspaceStatus } from '../workspace/model'
+import { WindowTabs } from './WindowTabs'
+import { isEditingOutsideTerminal } from '../lib/focusGuard'
+import { useTerminal, type PendingTerminalPaste } from '../hooks/useTerminal'
+import { useTerminalDrafts, type TerminalDraftStore } from '../hooks/useTerminalDrafts'
+import { MobileTerminalInput, terminalKeys, type ModifierName, type ModifierState } from '../lib/mobileTerminalInput'
 import { terminalTargetKey } from '../lib/terminalInput'
 import type { ConnectionState } from '../state/types'
-import {
-  deriveTerminalWorkspaceConnection,
-  type TerminalWorkspaceConnectionState,
-} from '../state/terminalConnection'
+import { deriveTerminalWorkspaceConnection, type TerminalWorkspaceConnectionState } from '../state/terminalConnection'
 import { useMicStream } from '../hooks/useMicStream'
 import { TalkButton } from './TalkButton'
 import { TerminalCockpit } from './TerminalCockpit'
@@ -38,6 +31,17 @@ export interface TerminalCommandActions {
 }
 
 export interface TerminalProps {
+  embedded?: boolean
+  windows?: SessionWindow[]
+  windowAttention?: Record<number, 'error' | 'waiting'>
+  onSelectWindow?: (index: number) => void
+  onSelectPane?: (paneId: string) => void
+  onBackToSessions?: () => void
+  onPreviousSession?: () => void
+  onNextSession?: () => void
+  attentionCount?: number
+  onOpenAlerts?: () => void
+  sessionStatus?: WorkspaceStatus
   sessionName: string
   hostId: string
   hostName?: string
@@ -64,18 +68,29 @@ export interface TerminalProps {
 }
 
 const terminalStateMessages: Record<TerminalWorkspaceConnectionState, string> = {
-  connecting: 'Connecting to Terminal…',
-  rehydrating: 'Synchronizing Hub state…',
+  connecting: 'Connexion au terminal…',
+  rehydrating: 'Synchronisation du Hub…',
   connected: '',
-  reconnecting: 'Terminal disconnected. Reconnecting…',
-  'hub-offline': 'The Hub connection is unavailable.',
-  'agent-offline': 'The target Agent is offline.',
-  'session-ended': 'This tmux Session is no longer available.',
-  'auth-required': 'Your Hub login has expired.',
-  'reload-required': 'TmuxAtlas was updated. Reload this page to continue.',
+  reconnecting: 'Terminal déconnecté. Reconnexion…',
+  'hub-offline': 'La connexion au Hub est indisponible.',
+  'agent-offline': 'L’agent est hors ligne.',
+  'session-ended': 'Cette session n’est plus disponible.',
+  'auth-required': 'Votre connexion au Hub a expiré.',
+  'reload-required': 'Atlas a été mis à jour. Actualisez la page pour continuer.',
 }
 
 export function Terminal({
+  embedded = false,
+  windows = [],
+  windowAttention,
+  onSelectWindow,
+  onSelectPane,
+  onBackToSessions,
+  onPreviousSession,
+  onNextSession,
+  attentionCount,
+  onOpenAlerts,
+  sessionStatus,
   sessionName,
   hostId,
   hostName,
@@ -102,11 +117,14 @@ export function Terminal({
   if (!inputRef.current) inputRef.current = new MobileTerminalInput()
   const input = inputRef.current
   const targetKey = terminalTargetKey(hostId, sessionName)
-  const targetLabel = `${hostName || hostId}/${sessionName}`
+  const resolveHostLabel = useHostLabel()
+  const hostLabel = resolveHostLabel(hostId, hostName === hostId ? 'Hôte' : hostName || 'Hôte') || 'Hôte'
+  const targetLabel = `${hostLabel}/${sessionName}`
+  const compact = useMediaQuery(COMPACT_LAYOUT_QUERY)
   const localTerminalDrafts = useTerminalDrafts()
   const { getDraft, setDraft } = terminalDrafts ?? localTerminalDrafts
   const [modifiers, setModifiers] = useState<ModifierState>(input.snapshot())
-  const [toolbarOpen, setToolbarOpen] = useState(true)
+  const [composerOpen, setComposerOpen] = useState(false)
   const [toolbarError, setToolbarError] = useState('')
   const [toolbarFeedback, setToolbarFeedback] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
@@ -142,27 +160,36 @@ export function Terminal({
     findPrevious,
     clearSearch,
   } = useTerminal(sessionName, hostId, input)
-  const mic = useMicStream(Boolean(hostLocal))
+  const mic = useMicStream(Boolean(hostLocal && !embedded))
   const toggleMic = useCallback(() => {
     mic.toggle()
     focus()
   }, [focus, mic])
-  const holdSpace = useCallback((on: boolean) => {
-    setVoiceHold(on)
-    focus()
-  }, [focus, setVoiceHold])
+  const holdSpace = useCallback(
+    (on: boolean) => {
+      setVoiceHold(on)
+      focus()
+    },
+    [focus, setVoiceHold],
+  )
 
   const submitPrompt = useCallback(() => {
-    try { sendRawInput(new Uint8Array([13])) } catch { /* the Terminal reports the disconnect */ }
+    try {
+      sendRawInput(new Uint8Array([13]))
+    } catch {
+      /* the Terminal reports the disconnect */
+    }
     focus()
   }, [focus, sendRawInput])
 
-  const workspaceConnection = connectionState ?? deriveTerminalWorkspaceConnection({
-    hub: hubConnection ?? 'ready',
-    agentOnline: agentOnline ?? true,
-    sessionAvailable: sessionAvailable ?? true,
-    pty: ptyState,
-  }).state
+  const workspaceConnection =
+    connectionState ??
+    deriveTerminalWorkspaceConnection({
+      hub: hubConnection ?? 'ready',
+      agentOnline: agentOnline ?? true,
+      sessionAvailable: sessionAvailable ?? true,
+      pty: ptyState,
+    }).state
   const canPaste = workspaceConnection === 'connected' && Boolean(navigator.clipboard?.readText)
 
   useEffect(() => input.subscribe(setModifiers), [input])
@@ -170,6 +197,7 @@ export function Terminal({
     input.reset()
     setToolbarError('')
     setToolbarFeedback('')
+    setComposerOpen(false)
     setPendingPaste(null)
     setPasteError('')
     setContextMenu(null)
@@ -191,9 +219,9 @@ export function Terminal({
     setToolbarError('')
     try {
       await copySelection()
-      setToolbarFeedback('Copied Terminal selection.')
+      setToolbarFeedback('Sélection copiée.')
     } catch (error) {
-      reportError(error, 'The selection could not be copied.')
+      reportError(error, 'Impossible de copier la sélection.')
       throw error
     }
   }, [copySelection, reportError])
@@ -207,10 +235,10 @@ export function Terminal({
         setPendingPaste(confirmation)
         setPasteError('')
       } else {
-        setToolbarFeedback('Pasted into Terminal.')
+        setToolbarFeedback('Texte collé dans le terminal.')
       }
     } catch (error) {
-      reportError(error, 'Clipboard paste failed.')
+      reportError(error, 'Impossible de coller le presse-papiers.')
       throw error
     }
   }, [pasteClipboard, reportError])
@@ -221,10 +249,10 @@ export function Terminal({
     try {
       commitClipboardPaste(pendingPaste)
       setPendingPaste(null)
-      setToolbarFeedback('Pasted multiple lines into Terminal.')
+      setToolbarFeedback('Lignes collées dans le terminal.')
       setToolbarError('')
     } catch (error) {
-      setPasteError(error instanceof Error ? error.message : 'The paste could not be sent.')
+      setPasteError(error instanceof Error ? error.message : 'Impossible d’envoyer le collage.')
     }
   }, [commitClipboardPaste, pendingPaste])
 
@@ -239,10 +267,13 @@ export function Terminal({
     window.requestAnimationFrame(() => focus())
   }, [clearSearch, focus])
 
-  const sendComposerCommand = useCallback((value: string) => {
-    sendCommand(value)
-    setToolbarError('')
-  }, [sendCommand])
+  const sendComposerCommand = useCallback(
+    (value: string) => {
+      sendCommand(value)
+      setToolbarError('')
+    },
+    [sendCommand],
+  )
 
   useEffect(() => {
     if (!onCommandActionsChange) return
@@ -250,49 +281,47 @@ export function Terminal({
       reconnect,
       focus,
       openSearch,
-      copy: async () => { await copy() },
-      paste: async () => { await paste() },
+      copy: async () => {
+        await copy()
+      },
+      paste: async () => {
+        await paste()
+      },
       scrollToBottom,
     }
     onCommandActionsChange(actions)
     return () => onCommandActionsChange(null)
-  }, [
-    copy,
-    focus,
-    onCommandActionsChange,
-    openSearch,
-    paste,
-    reconnect,
-    scrollToBottom,
-    targetKey,
-  ])
+  }, [copy, focus, onCommandActionsChange, openSearch, paste, reconnect, scrollToBottom, targetKey])
 
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
     connect(container)
-    const focusFrame = window.requestAnimationFrame(() => focus())
-    const focusTimer = window.setTimeout(() => focus(), 100)
+    const autoFocus = () => {
+      if (!isEditingOutsideTerminal()) focus()
+    }
+    const focusFrame = embedded ? 0 : window.requestAnimationFrame(autoFocus)
+    const focusTimer = embedded ? 0 : window.setTimeout(autoFocus, 100)
     return () => {
       window.cancelAnimationFrame(focusFrame)
       window.clearTimeout(focusTimer)
       disconnect()
     }
-  }, [connect, disconnect, focus])
+  }, [connect, disconnect, focus, embedded])
 
   useEffect(() => {
-    if (!termConnected || document.hidden) return
+    if (embedded || !termConnected || document.hidden) return
     const timer = window.setTimeout(() => {
       fit()
+      if (isEditingOutsideTerminal()) return
       focus()
-      containerRef.current
-        ?.querySelector<HTMLTextAreaElement>('textarea.xterm-helper-textarea')
-        ?.focus()
+      containerRef.current?.querySelector<HTMLTextAreaElement>('textarea.xterm-helper-textarea')?.focus()
     }, 100)
     return () => window.clearTimeout(timer)
-  }, [fit, focus, termConnected])
+  }, [fit, focus, termConnected, embedded])
 
   useEffect(() => {
+    if (embedded) return
     let timer: number | null = null
     const refocus = () => {
       if (document.hidden || !containerRef.current) return
@@ -300,10 +329,9 @@ export function Terminal({
       timer = window.setTimeout(() => {
         timer = null
         fit()
+        if (isEditingOutsideTerminal()) return
         focus()
-        containerRef.current
-          ?.querySelector<HTMLTextAreaElement>('textarea.xterm-helper-textarea')
-          ?.focus()
+        containerRef.current?.querySelector<HTMLTextAreaElement>('textarea.xterm-helper-textarea')?.focus()
       }, 200)
     }
     document.addEventListener('visibilitychange', refocus)
@@ -313,7 +341,7 @@ export function Terminal({
       window.removeEventListener('focus', refocus)
       if (timer !== null) window.clearTimeout(timer ?? undefined)
     }
-  }, [fit, focus])
+  }, [fit, focus, embedded])
 
   useEffect(() => {
     const container = containerRef.current
@@ -354,13 +382,15 @@ export function Terminal({
       const target = container.querySelector('.xterm-screen')
       if (!target) return
       for (let index = 0; index < Math.abs(lines); index++) {
-        target.dispatchEvent(new WheelEvent('wheel', {
-          deltaY: lines > 0 ? lineHeight : -lineHeight,
-          clientX,
-          clientY,
-          bubbles: true,
-          cancelable: true,
-        }))
+        target.dispatchEvent(
+          new WheelEvent('wheel', {
+            deltaY: lines > 0 ? lineHeight : -lineHeight,
+            clientX,
+            clientY,
+            bubbles: true,
+            cancelable: true,
+          }),
+        )
       }
     }
 
@@ -435,10 +465,10 @@ export function Terminal({
   useEffect(() => {
     const timer = window.setTimeout(() => {
       fit()
-      focus()
+      if (!embedded && !isEditingOutsideTerminal()) focus()
     }, 100)
     return () => window.clearTimeout(timer)
-  }, [fit, focus, fullscreen, zenMode])
+  }, [fit, focus, fullscreen, zenMode, embedded])
 
   const showMenuAtButton = (button: HTMLButtonElement) => {
     const rect = button.getBoundingClientRect()
@@ -446,10 +476,16 @@ export function Terminal({
   }
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden p-1">
-      {!zenMode && (
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+      {!embedded && !zenMode && (
         <TerminalCockpit
-          hostLabel={hostName || hostId}
+          hostLabel={hostLabel}
+          sessionStatus={sessionStatus}
+          onBackToSessions={onBackToSessions}
+          onPreviousSession={onPreviousSession}
+          onNextSession={onNextSession}
+          attentionCount={attentionCount}
+          onOpenAlerts={onOpenAlerts}
           sessionName={sessionName}
           windowLabel={windowLabel}
           paneLabel={paneLabel}
@@ -471,35 +507,47 @@ export function Terminal({
           onMore={showMenuAtButton}
         />
       )}
-      {mic.available && talkSlot && createPortal(
-        <TalkButton
-          key={targetKey}
-          disabled={!claudeActive || mic.state !== 'on' || workspaceConnection !== 'connected'}
-          onHold={holdSpace}
-          readScreen={readScreen}
-          onSubmit={submitPrompt}
-        />,
-        talkSlot,
-      )}
-      {zenMode && mic.state !== 'off' && (
+      {!embedded &&
+        !compact &&
+        mic.available &&
+        talkSlot &&
+        createPortal(
+          <TalkButton
+            key={targetKey}
+            disabled={!claudeActive || mic.state !== 'on' || workspaceConnection !== 'connected'}
+            onHold={holdSpace}
+            readScreen={readScreen}
+            onSubmit={submitPrompt}
+          />,
+          talkSlot,
+        )}
+      {!embedded && zenMode && mic.state !== 'off' && (
         <button
           type="button"
-          aria-label="Turn off microphone"
+          aria-label="Désactiver le micro"
           onClick={toggleMic}
           className="absolute right-24 top-3 z-20 min-h-11 rounded border border-destructive bg-card/95 px-3 text-xs text-destructive"
         >
-          ● Mic on
+          Micro activé
         </button>
       )}
-      {zenMode && onToggleZen && (
+      {!embedded && zenMode && onToggleZen && (
         <button
           type="button"
-          aria-label="Exit Terminal Zen Mode"
+          aria-label="Quitter le mode Zen"
           onClick={onToggleZen}
           className="absolute right-3 top-3 z-20 min-h-11 rounded border border-border bg-card/95 px-3 text-xs text-muted-foreground"
         >
-          Exit Zen
+          Quitter Zen
         </button>
+      )}
+      {!embedded && !zenMode && (
+        <WindowTabs
+          windows={windows}
+          windowAttention={windowAttention}
+          onSelectWindow={onSelectWindow}
+          onSelectPane={onSelectPane}
+        />
       )}
       {searchOpen && (
         <TerminalSearchBar
@@ -512,8 +560,7 @@ export function Terminal({
         />
       )}
       <div
-        className="relative min-h-0 w-full flex-1 rounded border border-border bg-card"
-        style={{ boxShadow: 'var(--terminal-chrome-shadow)' }}
+        className="relative min-h-0 w-full flex-1 bg-card"
         onContextMenu={event => {
           event.preventDefault()
           setContextMenu({ x: event.clientX, y: event.clientY })
@@ -522,7 +569,8 @@ export function Terminal({
         <div
           ref={containerRef}
           data-terminal-surface
-          className="absolute inset-0.5 overflow-hidden rounded-sm"
+          className="absolute inset-0 overflow-hidden pl-1 md:pl-2 md:pt-1"
+          onClick={embedded ? focus : undefined}
         />
         {workspaceConnection !== 'connected' && (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded bg-background/80">
@@ -535,14 +583,16 @@ export function Terminal({
                   onClick={onRetry || reconnect}
                   className="min-h-9 rounded border border-primary/50 px-3 text-primary"
                 >
-                  Retry
+                  Réessayer
                 </button>
               )}
             </div>
           </div>
         )}
         {imagePasteStatus && (
-          <div role="status" className="px-3 py-2 text-sm">{imagePasteStatus}</div>
+          <div role="status" className="px-3 py-2 text-sm">
+            {imagePasteStatus}
+          </div>
         )}
         {pendingPaste && (
           <TerminalPasteConfirmation
@@ -559,103 +609,103 @@ export function Terminal({
         )}
       </div>
 
-      <div className="shrink-0 pb-[var(--safe-area-inset-bottom)] lg:hidden lg:pointer-coarse:block">
-        <button
-          type="button"
-          className="mt-1 min-h-11 w-full rounded border border-border bg-card text-xs font-mono"
-          aria-expanded={toolbarOpen}
-          aria-controls="mobile-terminal-toolbar"
-          onClick={() => setToolbarOpen(value => !value)}
-        >
-          {toolbarOpen ? 'Hide terminal keys' : 'Show terminal keys'}
-        </button>
-        {toolbarOpen && (
-          <div
-            id="mobile-terminal-toolbar"
-            className="mt-1 flex gap-1 overflow-x-auto overscroll-x-contain"
-            role="toolbar"
-            aria-label="Terminal keys"
-          >
-            {([
-              ['Esc', terminalKeys.escape],
-              ['Tab', terminalKeys.tab],
-              ['←', terminalKeys.left],
-              ['↑', terminalKeys.up],
-              ['↓', terminalKeys.down],
-              ['→', terminalKeys.right],
-            ] as const).map(([label, value]) => (
+      {!embedded && compact && (
+        <div className="shrink-0 pb-[var(--safe-area-inset-bottom)]">
+          {composerOpen && (
+            <MobileInputComposer
+              key={targetKey}
+              targetKey={targetKey}
+              targetLabel={targetLabel}
+              initialDraft={getDraft(targetKey)}
+              onDraftChange={setDraft}
+              onSend={sendComposerCommand}
+              expanded
+              onClose={() => setComposerOpen(false)}
+            />
+          )}
+          <div className="flex h-11 items-center" role="toolbar" aria-label="Touches du terminal">
+            <div className="scrollbar-none flex min-w-0 flex-1 overflow-x-auto">
+              {(
+                [
+                  ['Échap', 'Esc', terminalKeys.escape],
+                  ['Tabulation', 'Tab', terminalKeys.tab],
+                  ['Flèche gauche', <ArrowLeft size={16} />, terminalKeys.left],
+                  ['Flèche haut', <ArrowUp size={16} />, terminalKeys.up],
+                  ['Flèche bas', <ArrowDown size={16} />, terminalKeys.down],
+                  ['Flèche droite', <ArrowRight size={16} />, terminalKeys.right],
+                ] as const
+              ).map(([label, content, value]) => (
+                <button
+                  key={label}
+                  type="button"
+                  aria-label={label}
+                  className="grid h-11 min-w-11 place-items-center font-mono text-xs"
+                  onClick={() => {
+                    sendInput(value)
+                    focus()
+                  }}
+                >
+                  {content}
+                </button>
+              ))}
+              {(['ctrl', 'alt'] as const).map(modifier => (
+                <button
+                  key={modifier}
+                  type="button"
+                  aria-label={`Modificateur ${modifier}`}
+                  aria-pressed={modifiers[modifier] !== 'off'}
+                  className="h-11 min-w-11 font-mono text-xs aria-pressed:text-primary"
+                  onClick={() => cycleModifier(modifier)}
+                >
+                  {modifier === 'ctrl' ? 'Ctrl' : 'Alt'}
+                </button>
+              ))}
               <button
-                key={label}
                 type="button"
-                aria-label={
-                  label === '←' ? 'Left arrow'
-                    : label === '↑' ? 'Up arrow'
-                      : label === '↓' ? 'Down arrow'
-                        : label === '→' ? 'Right arrow'
-                          : label
-                }
-                className="min-h-11 min-w-11 rounded border border-border bg-card font-mono"
-                onClick={() => {
-                  sendInput(value)
-                  focus()
-                }}
+                aria-label="Afficher le clavier"
+                className="grid h-11 min-w-11 place-items-center"
+                onClick={focus}
               >
-                {label}
+                <Keyboard size={16} />
               </button>
-            ))}
-            {(['ctrl', 'alt'] as const).map(modifier => (
               <button
-                key={modifier}
                 type="button"
-                aria-label={`${modifier === 'ctrl' ? 'Control' : 'Alt'} modifier: ${modifiers[modifier]}`}
-                aria-pressed={modifiers[modifier] !== 'off'}
-                className="min-h-11 min-w-14 rounded border border-border bg-card font-mono data-[active=true]:border-primary data-[active=true]:text-primary"
-                data-active={modifiers[modifier] !== 'off'}
-                onClick={() => cycleModifier(modifier)}
+                aria-label="Composer un message"
+                aria-expanded={composerOpen}
+                className="grid h-11 min-w-11 place-items-center"
+                onClick={() => setComposerOpen(value => !value)}
               >
-                {modifier === 'ctrl' ? 'Ctrl' : 'Alt'}
-                {modifiers[modifier] === 'locked' ? ' 🔒' : modifiers[modifier] === 'once' ? ' ·' : ''}
+                <Pencil size={16} />
               </button>
-            ))}
-            <button
-              type="button"
-              aria-label="Copy Terminal selection"
-              disabled={!hasSelection}
-              className="min-h-11 min-w-14 rounded border border-border bg-card font-mono disabled:opacity-40"
-              onClick={() => void copy().catch(() => {})}
-            >
-              Copy
-            </button>
-            <button
-              type="button"
-              aria-label="Paste Clipboard into Terminal"
-              disabled={!canPaste}
-              className="min-h-11 min-w-14 rounded border border-border bg-card font-mono disabled:opacity-40"
-              onClick={() => void paste().catch(() => {})}
-            >
-              Paste
-            </button>
-            <button
-              type="button"
-              aria-label="Show software keyboard"
-              className="min-h-11 min-w-14 rounded border border-border bg-card font-mono"
-              onClick={focus}
-            >
-              ⌨︎
-            </button>
+            </div>
+            {mic.available && (
+              <div className="flex shrink-0 items-center bg-card">
+                <button
+                  type="button"
+                  aria-label={mic.state === 'off' ? 'Activer le micro' : 'Désactiver le micro'}
+                  aria-pressed={mic.state !== 'off'}
+                  className="grid h-11 w-11 place-items-center"
+                  onClick={toggleMic}
+                >
+                  <Mic size={16} />
+                </button>
+                <TalkButton
+                  key={targetKey}
+                  disabled={!claudeActive || mic.state !== 'on' || workspaceConnection !== 'connected'}
+                  onHold={holdSpace}
+                  readScreen={readScreen}
+                  onSubmit={submitPrompt}
+                />
+              </div>
+            )}
           </div>
-        )}
-        <MobileInputComposer
-          key={targetKey}
-          targetKey={targetKey}
-          targetLabel={targetLabel}
-          initialDraft={getDraft(targetKey)}
-          onDraftChange={setDraft}
-          onSend={sendComposerCommand}
-        />
-        {toolbarError && <p className="px-2 pt-1 text-xs text-destructive" role="alert">{toolbarError}</p>}
-        {toolbarFeedback && <p className="px-2 pt-1 text-xs text-success" role="status">{toolbarFeedback}</p>}
-      </div>
+        </div>
+      )}
+      {(toolbarError || toolbarFeedback) && (
+        <p className="px-2 text-xs" role={toolbarError ? 'alert' : 'status'}>
+          {toolbarError || toolbarFeedback}
+        </p>
+      )}
 
       {contextMenu && (
         <TerminalContextMenu
@@ -665,6 +715,9 @@ export function Terminal({
           onCopy={() => void copy().catch(() => {})}
           onPaste={() => void paste().catch(() => {})}
           onFind={openSearch}
+          onFontSize={adjustFontSize}
+          onScrollToBottom={scrollToBottom}
+          showScrollToBottom={!isAtBottom || hasNewOutput}
           onSelectAll={() => {
             selectAll()
             focus()

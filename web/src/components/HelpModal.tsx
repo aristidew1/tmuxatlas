@@ -22,18 +22,26 @@ export function HelpModal({ commands, onClose }: HelpModalProps) {
   return (
     <Dialog
       open
-      onOpenChange={open => { if (!open) onClose() }}
-      title="Commands & keyboard shortcuts"
-      description="Generated from the active command registry."
-      closeLabel="Close keyboard shortcuts"
+      onOpenChange={open => {
+        if (!open) onClose()
+      }}
+      title="Commandes et raccourcis clavier"
+      description="Retrouvez les commandes disponibles."
+      closeLabel="Fermer les raccourcis clavier"
     >
       {groups.map(([category, categoryCommands]) => (
         <section key={category} aria-labelledby={`help-${category.toLowerCase()}`} className="mb-5 last:mb-0">
-          <h3 id={`help-${category.toLowerCase()}`} className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">{category}</h3>
+          <h3 id={`help-${category.toLowerCase()}`} className="mb-2 text-xs  text-muted-foreground">
+            {category}
+          </h3>
           {categoryCommands.map(command => (
             <div key={command.id} className="flex min-h-9 items-center justify-between gap-4 py-1">
               <span className="text-sm text-foreground">{command.label}</span>
-              {command.shortcut ? <Kbd>{formatShortcut(command.shortcut)}</Kbd> : <span className="text-xs text-muted-foreground">Palette</span>}
+              {command.shortcut ? (
+                <Kbd>{formatShortcut(command.shortcut)}</Kbd>
+              ) : (
+                <span className="text-xs text-muted-foreground">Recherche</span>
+              )}
             </div>
           ))}
         </section>

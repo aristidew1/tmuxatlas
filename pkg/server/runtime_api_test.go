@@ -108,3 +108,81 @@ func TestRuntimeAPIMapsStructuredTerminalErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestSessionNewForwardsCwdAndAgentAndRejectsBadAgent(t *testing.T) {
+	router := &fakeActionRouter{response: peer.ActionResponse{RequestID: "r", Result: json.RawMessage(`{}`)}}
+	response := httptest.NewRecorder()
+	handleSessionNew(response, httptest.NewRequest(http.MethodPost, "/",
+		bytes.NewBufferString(`{"host_id":"local","session":"p","cwd":"~/x","agent":"codex"}`)), router, nil)
+	if response.Code != http.StatusOK || router.operation != "new" ||
+		string(router.payload) != `{"agent":"codex","cwd":"~/x"}` {
+		t.Fatalf("status=%d op=%s payload=%s", response.Code, router.operation, router.payload)
+	}
+	router = &fakeActionRouter{response: peer.ActionResponse{Result: json.RawMessage(`{}`)}}
+	response = httptest.NewRecorder()
+	handleSessionNew(response, httptest.NewRequest(http.MethodPost, "/",
+		bytes.NewBufferString(`{"host_id":"local","session":"p"}`)), router, nil)
+	if string(router.payload) != `{}` {
+		t.Fatalf("payload must stay empty, got %s", router.payload)
+	}
+	response = httptest.NewRecorder()
+	router = &fakeActionRouter{}
+	handleSessionNew(response, httptest.NewRequest(http.MethodPost, "/",
+		bytes.NewBufferString(`{"host_id":"local","session":"p","agent":"rm -rf"}`)), router, nil)
+	if response.Code != http.StatusBadRequest || router.operation != "" {
+		t.Fatalf("status=%d routed=%q", response.Code, router.operation)
+	}
+}
+
+func TestSessionPreviewAndDirectoriesRoute(t *testing.T) {
+	router := &fakeActionRouter{response: peer.ActionResponse{Result: json.RawMessage(`{"pane":"%1","window":0,"lines":["a"],"prompt":null}`)}}
+	response := httptest.NewRecorder()
+	handleSessionPreview(response, httptest.NewRequest(http.MethodGet, "/?host_id=local&session=s&pane=%251&lines=12", nil), router)
+	if response.Code != http.StatusOK || router.operation != "preview" ||
+		string(router.payload) != `{"lines":12,"pane":"%1"}` ||
+		response.Body.String() != `{"pane":"%1","window":0,"lines":["a"],"prompt":null}` {
+		t.Fatalf("status=%d payload=%s body=%s", response.Code, router.payload, response.Body.String())
+	}
+	bad := httptest.NewRecorder()
+	handleSessionPreview(bad, httptest.NewRequest(http.MethodGet, "/?host_id=local", nil), router)
+	if bad.Code != http.StatusBadRequest {
+		t.Fatalf("missing session status=%d", bad.Code)
+	}
+
+	router = &fakeActionRouter{response: peer.ActionResponse{Result: json.RawMessage(`{"directories":[]}`)}}
+	response = httptest.NewRecorder()
+	handleSessionDirectories(response, httptest.NewRequest(http.MethodGet, "/?host_id=remote", nil), router)
+	if router.operation != "directories" || router.target.HostID != "remote" || response.Body.String() != `{"directories":[]}` {
+		t.Fatalf("op=%s target=%+v body=%s", router.operation, router.target, response.Body.String())
+	}
+}
+
+func TestSessionReplyValidationAndErrorMapping(t *testing.T) {
+	for _, body := range []string{
+		`{"host_id":"l","session":"s","pane":"%1","key":"1"}`,
+		`{"host_id":"l","session":"s","pane":"%1","fingerprint":"f"}`,
+		`{"host_id":"l","session":"s","key":"1","fingerprint":"f"}`,
+	} {
+		response := httptest.NewRecorder()
+		router := &fakeActionRouter{}
+		handleSessionReply(response, httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(body)), router)
+		if response.Code != http.StatusBadRequest || router.operation != "" {
+			t.Fatalf("%s: status=%d", body, response.Code)
+		}
+	}
+	router := &fakeActionRouter{err: peer.RuntimeError{Code: peer.ErrorPromptChanged}}
+	response := httptest.NewRecorder()
+	handleSessionReply(response, httptest.NewRequest(http.MethodPost, "/",
+		bytes.NewBufferString(`{"host_id":"l","session":"s","pane":"%1","key":"1","fingerprint":"f"}`)), router)
+	if response.Code != http.StatusConflict || !bytes.Contains(response.Body.Bytes(), []byte(`"code":"prompt_changed"`)) {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	if router.operation != "reply" || string(router.payload) != `{"fingerprint":"f","key":"1","pane":"%1"}` {
+		t.Fatalf("op=%s payload=%s", router.operation, router.payload)
+	}
+	response = httptest.NewRecorder()
+	writeRuntimeError(response, peer.RuntimeError{Code: peer.ErrorUnsupported})
+	if response.Code != http.StatusNotImplemented || !bytes.Contains(response.Body.Bytes(), []byte(`"code":"unsupported"`)) {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}

@@ -1,3 +1,4 @@
+import { ArrowDown, ArrowUp, X } from 'lucide-react'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type { TerminalSearchState } from '../hooks/useTerminal'
 
@@ -47,14 +48,17 @@ export function TerminalSearchBar({
     }
   }
 
-  const resultLabel = state.resultCount > 0
-    ? `${Math.max(0, state.resultIndex) + 1} / ${state.resultCount}`
-    : query && state.loaded ? 'No matches' : ''
+  const resultLabel =
+    state.resultCount > 0
+      ? `${Math.max(0, state.resultIndex) + 1} / ${state.resultCount}`
+      : query && state.loaded
+        ? 'Aucun résultat'
+        : ''
 
   return (
     <div
       role="search"
-      aria-label="Search Terminal scrollback"
+      aria-label="Rechercher dans le terminal"
       className="flex min-h-11 flex-wrap items-center gap-1 border-b border-border bg-card px-2 py-1 font-mono text-xs"
     >
       <input
@@ -63,16 +67,16 @@ export function TerminalSearchBar({
         value={query}
         onChange={event => setQuery(event.target.value)}
         onKeyDown={onKeyDown}
-        placeholder="Find in Terminal"
-        aria-label="Terminal search query"
+        placeholder="Rechercher dans le terminal"
+        aria-label="Texte recherché"
         className="min-h-9 min-w-0 flex-1 rounded border border-border bg-input px-2 text-foreground outline-none focus:border-primary"
       />
       <span className="min-w-16 text-center text-muted-foreground" aria-live="polite">
-        {state.loading ? 'Loading…' : resultLabel}
+        {state.loading ? 'Chargement…' : resultLabel}
       </span>
       <button
         type="button"
-        aria-label="Match case"
+        aria-label="Respecter la casse"
         aria-pressed={caseSensitive}
         onClick={() => setCaseSensitive(value => !value)}
         className="min-h-9 min-w-9 rounded border border-border px-2 data-[active=true]:border-primary data-[active=true]:text-primary"
@@ -82,29 +86,29 @@ export function TerminalSearchBar({
       </button>
       <button
         type="button"
-        aria-label="Previous Terminal search result"
+        aria-label="Résultat précédent"
         disabled={!query || !state.loaded}
         onClick={() => void onFindPrevious(query, caseSensitive).catch(() => {})}
         className="min-h-9 min-w-9 rounded border border-border disabled:opacity-40"
       >
-        ↑
+        <ArrowUp aria-hidden="true" size={16} />
       </button>
       <button
         type="button"
-        aria-label="Next Terminal search result"
+        aria-label="Résultat suivant"
         disabled={!query || !state.loaded}
         onClick={() => void onFindNext(query, caseSensitive).catch(() => {})}
         className="min-h-9 min-w-9 rounded border border-border disabled:opacity-40"
       >
-        ↓
+        <ArrowDown aria-hidden="true" size={16} />
       </button>
       <button
         type="button"
-        aria-label="Close Terminal search"
+        aria-label="Fermer la recherche"
         onClick={onClose}
         className="min-h-9 min-w-9 rounded border border-border"
       >
-        ×
+        <X aria-hidden="true" size={16} />
       </button>
       {state.error && (
         <div className="flex w-full items-center justify-between gap-2 text-destructive" role="alert">
@@ -114,7 +118,7 @@ export function TerminalSearchBar({
             onClick={() => void onRetry().catch(() => {})}
             className="min-h-9 rounded border border-destructive/50 px-2"
           >
-            Retry Search
+            Réessayer la recherche
           </button>
         </div>
       )}

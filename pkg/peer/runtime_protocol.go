@@ -20,6 +20,9 @@ const (
 	CapabilityRequestResults = "request-results"
 	CapabilityPTYControl     = "pty-control"
 	CapabilityClipboardImage = "clipboard-image"
+	// CapabilitySessionExtras covers preview, reply, directories and the
+	// cwd/agent options of "new". Agents without it get a clean "unsupported".
+	CapabilitySessionExtras = "session-extras"
 
 	maxRuntimeIDLength = 128
 	maxOperationLength = 64
@@ -33,6 +36,7 @@ var RuntimeCapabilities = []string{
 	CapabilityRequestResults,
 	CapabilityPTYControl,
 	CapabilityClipboardImage,
+	CapabilitySessionExtras,
 }
 
 type SessionTarget struct {
@@ -195,6 +199,8 @@ const (
 	ErrorRequestConflict       ErrorCode = "request-conflict"
 	ErrorResourceExhausted     ErrorCode = "resource-exhausted"
 	ErrorStaleGeneration       ErrorCode = "stale-generation"
+	ErrorUnsupported           ErrorCode = "unsupported"
+	ErrorPromptChanged         ErrorCode = "prompt_changed"
 )
 
 type RuntimeError struct {
@@ -226,7 +232,8 @@ func (runtimeError RuntimeError) validateCode() error {
 	case ErrorInvalidTarget, ErrorNotFound, ErrorPeerOffline, ErrorPeerRevoked,
 		ErrorProtocolIncompatible, ErrorCapabilityUnsupported, ErrorQueueFull,
 		ErrorTimeout, ErrorExecutionFailed, ErrorExecutionUnknown,
-		ErrorRequestConflict, ErrorResourceExhausted, ErrorStaleGeneration:
+		ErrorRequestConflict, ErrorResourceExhausted, ErrorStaleGeneration,
+		ErrorUnsupported, ErrorPromptChanged:
 	default:
 		return errors.New("unknown runtime error code")
 	}

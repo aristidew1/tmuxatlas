@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { ArrowUp, Square } from 'lucide-react'
 import { readClaudeVoiceStatus } from '../lib/claudeVoiceStatus'
 
 const POLL_MS = 100
@@ -14,7 +15,12 @@ const ROUND = 'grid h-11 w-11 shrink-0 place-items-center rounded-full disabled:
  * Holds the space bar, which Claude Code treats as hold-to-talk, until Stop or
  * Send. Send presses Enter once Claude's footer shows the transcript is in.
  */
-export function TalkButton({ disabled, onHold, readScreen, onSubmit }: {
+export function TalkButton({
+  disabled,
+  onHold,
+  readScreen,
+  onSubmit,
+}: {
   disabled: boolean
   onHold: (on: boolean) => void
   readScreen: () => string[]
@@ -23,7 +29,9 @@ export function TalkButton({ disabled, onHold, readScreen, onSubmit }: {
   const [phase, setPhase] = useState<Phase>('idle')
   const [notice, setNotice] = useState('')
   const latest = useRef({ onHold, readScreen, onSubmit })
-  useEffect(() => { latest.current = { onHold, readScreen, onSubmit } }, [onHold, onSubmit, readScreen])
+  useEffect(() => {
+    latest.current = { onHold, readScreen, onSubmit }
+  }, [onHold, onSubmit, readScreen])
   const heard = useRef(false)
 
   // Leaving the holding phase, by any path, releases the space bar.
@@ -59,13 +67,13 @@ export function TalkButton({ disabled, onHold, readScreen, onSubmit }: {
       const status = readClaudeVoiceStatus(latest.current.readScreen())
       if (status === 'recording') heard.current = true
       if (status === 'failed') {
-        finish('Claude could not transcribe this. Nothing was sent.')
+        finish('Claude n’a pas pu transcrire. Rien n’a été envoyé.')
       } else if (elapsed > TRANSCRIPT_TIMEOUT_MS) {
-        finish('Claude did not finish transcribing. Nothing was sent.')
+        finish('Claude n’a pas terminé la transcription. Rien n’a été envoyé.')
       } else if (status !== 'idle') {
         idleTicks = 0
       } else if (!heard.current) {
-        finish('Claude was not listening. Nothing was sent.')
+        finish('Claude n’écoutait pas. Rien n’a été envoyé.')
       } else if (++idleTicks >= IDLE_TICKS_BEFORE_SEND) {
         latest.current.onSubmit()
         finish('')
@@ -80,8 +88,8 @@ export function TalkButton({ disabled, onHold, readScreen, onSubmit }: {
         <button
           type="button"
           disabled={disabled}
-          aria-label="Talk to Claude"
-          title="Holds the space bar until you stop or send"
+          aria-label="Talk : parler à Claude"
+          title="Maintient la barre espace jusqu’à l’arrêt ou l’envoi"
           className="min-h-11 shrink-0 rounded border border-border px-2 text-muted-foreground hover:text-foreground disabled:opacity-40 md:min-h-8"
           onClick={() => {
             setNotice('')
@@ -92,33 +100,37 @@ export function TalkButton({ disabled, onHold, readScreen, onSubmit }: {
         >
           Talk
         </button>
-        {notice && <span role="alert" title={notice} className="ml-2 min-w-0 truncate font-normal text-destructive">{notice}</span>}
+        {notice && (
+          <span role="alert" title={notice} className="ml-2 min-w-0 truncate font-normal text-destructive">
+            {notice}
+          </span>
+        )}
       </>
     )
   }
 
   const sending = phase === 'sending'
   return (
-    <div role="group" aria-label="Dictation" className="flex items-center gap-2">
+    <div role="group" aria-label="Dictée" className="flex items-center gap-2">
       <button
         type="button"
         disabled={sending}
-        aria-label="Stop talking and edit the prompt"
-        title="Stop and edit the prompt"
+        aria-label="Arrêter la dictée et modifier le texte"
+        title="Arrêter et modifier le texte"
         className={`${ROUND} border border-border bg-muted text-foreground hover:opacity-80`}
         onClick={() => setPhase('idle')}
       >
-        <svg aria-hidden="true" viewBox="0 0 10 10" className="h-2.5 w-2.5" fill="currentColor"><rect width="10" height="10" rx="2" /></svg>
+        <Square aria-hidden="true" size={14} />
       </button>
       <button
         type="button"
         disabled={sending}
-        aria-label="Stop talking and send the prompt"
-        title="Stop and send the prompt"
+        aria-label="Arrêter la dictée et envoyer le texte"
+        title="Arrêter et envoyer le texte"
         className={`${ROUND} bg-blue-600 text-white hover:opacity-90`}
         onClick={() => setPhase('sending')}
       >
-        <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" /></svg>
+        <ArrowUp aria-hidden="true" size={16} />
       </button>
     </div>
   )

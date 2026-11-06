@@ -2,6 +2,22 @@ import { useState, useEffect, useCallback } from 'react'
 import { authenticatePasskey, registerPasskey } from '../lib/webauthn'
 import { apiFetch, setCSRFToken } from '../lib/api'
 
+/** Present browser and server passkey errors without exposing untranslated messages. */
+export function passkeyError(cause: unknown, fallback: string): string {
+  if (!cause || typeof cause !== 'object') return fallback
+  const { name, message } = cause as { name?: string; message?: string }
+  if (name === 'NotAllowedError' || /cancelled/i.test(message || ''))
+    return 'La demande de passkey a été annulée ou a expiré.'
+  if (/require HTTPS/i.test(message || ''))
+    return 'Les passkeys nécessitent HTTPS (localhost est autorisé pour les essais locaux).'
+  if (/does not support passkeys/i.test(message || '')) return 'Ce navigateur ne prend pas en charge les passkeys.'
+  if (/invalid setup token or session/i.test(message || ''))
+    return 'Le jeton de configuration ou la session est invalide.'
+  if (/capacity reached/i.test(message || '')) return 'Trop de demandes de passkey sont en cours. Réessayez.'
+  if (/verification failed/i.test(message || '')) return 'La vérification de la passkey a échoué.'
+  return fallback
+}
+
 interface AuthState {
   loading: boolean
   authRequired: boolean
@@ -81,7 +97,7 @@ export function useAuth(): AuthState {
       setAuthenticated(true)
       return true
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Passkey setup failed')
+      setError(passkeyError(cause, 'La configuration de la passkey a échoué'))
       return false
     }
   }, [])
@@ -96,7 +112,7 @@ export function useAuth(): AuthState {
       setAuthenticated(true)
       return true
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Passkey sign-in failed')
+      setError(passkeyError(cause, 'La connexion par passkey a échoué'))
       return false
     }
   }, [])
@@ -112,7 +128,15 @@ export function useAuth(): AuthState {
   }, [])
 
   return {
-    loading, authRequired, needsSetup, authenticated, error,
-    rpId, origin, setup, login, logout,
+    loading,
+    authRequired,
+    needsSetup,
+    authenticated,
+    error,
+    rpId,
+    origin,
+    setup,
+    login,
+    logout,
   }
 }

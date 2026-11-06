@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { applyTheme, cssColorToHex } from './theme'
+import { applyTheme, cssColorToHex, DEFAULT_THEME, themePresets } from './theme'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -36,4 +36,18 @@ describe('applyTheme color scheme', () => {
     applyTheme('light')
     expect(document.documentElement.style.colorScheme).toBe('light')
   })
+})
+
+it('conserve les identifiants des thèmes et affiche leurs noms français', () => {
+  expect(Object.values(themePresets).map(theme => theme.label)).toEqual([
+    'Atlas',
+    'Claude sombre',
+    'Claude clair',
+    'CRT bleu rétro',
+    'Sombre',
+    'Clair',
+    'Phosphore vert',
+    'Minuit',
+  ])
+  expect(DEFAULT_THEME).toBe('atlas')
 })

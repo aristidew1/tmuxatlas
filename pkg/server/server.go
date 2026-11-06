@@ -81,8 +81,10 @@ func writeRuntimeError(w http.ResponseWriter, err error) {
 	case peer.ErrorPeerOffline, peer.ErrorPeerRevoked:
 		status = http.StatusServiceUnavailable
 	case peer.ErrorProtocolIncompatible, peer.ErrorCapabilityUnsupported,
-		peer.ErrorRequestConflict, peer.ErrorExecutionUnknown:
+		peer.ErrorRequestConflict, peer.ErrorExecutionUnknown, peer.ErrorPromptChanged:
 		status = http.StatusConflict
+	case peer.ErrorUnsupported:
+		status = http.StatusNotImplemented
 	case peer.ErrorQueueFull, peer.ErrorResourceExhausted:
 		status = http.StatusTooManyRequests
 	case peer.ErrorTimeout:
@@ -424,6 +426,18 @@ func Run(ctx context.Context, opts *Options) error {
 
 			mutations.With(httpguard.BodyReadDeadline(10*time.Second), httpguard.JSONBody(httpguard.SmallJSONLimit)).Post("/session/select-pane", func(w http.ResponseWriter, r *http.Request) {
 				handleSessionSelectPane(w, r, actionRouter)
+			})
+
+			mutations.With(httpguard.BodyReadDeadline(10*time.Second), httpguard.JSONBody(httpguard.SmallJSONLimit)).Post("/session/reply", func(w http.ResponseWriter, r *http.Request) {
+				handleSessionReply(w, r, actionRouter)
+			})
+
+			r.Get("/session/preview", func(w http.ResponseWriter, r *http.Request) {
+				handleSessionPreview(w, r, actionRouter)
+			})
+
+			r.Get("/session/directories", func(w http.ResponseWriter, r *http.Request) {
+				handleSessionDirectories(w, r, actionRouter)
 			})
 
 			// Tool event query/management (auth-protected)

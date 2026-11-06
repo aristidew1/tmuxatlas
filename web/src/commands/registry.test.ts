@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createCommandRegistry, dispatchCommandShortcut, getCommand, type ShortcutEventLike } from './registry'
+import {
+  createCommandRegistry,
+  dispatchCommandShortcut,
+  formatShortcut,
+  getCommand,
+  type ShortcutEventLike,
+} from './registry'
 
 function event(key: string, overrides: Partial<ShortcutEventLike> = {}): ShortcutEventLike {
   return {
@@ -25,6 +31,12 @@ function registry(handlers: Record<string, ReturnType<typeof vi.fn>> = {}) {
 }
 
 describe('command registry', () => {
+  it('formats shortcuts for the current platform', () => {
+    expect(formatShortcut('ctrl+k', false)).toBe('Ctrl K')
+    expect(formatShortcut('mod+k', false)).toBe('Ctrl K')
+    expect(formatShortcut('mod+k', true)).toBe('⌘ K')
+  })
+
   it('keeps stable metadata and evaluates enablement from one source', () => {
     const commands = createCommandRegistry({
       environment: { hasTerminalTarget: false, canReconnect: false, canSignOut: false, hasAttention: false },
@@ -34,7 +46,12 @@ describe('command registry', () => {
         'account.sign-out': vi.fn(),
       },
     })
-    expect(getCommand(commands, 'palette.open')).toMatchObject({ label: 'Open Command Palette', category: 'Navigation', scope: 'overlay', enabled: true })
+    expect(getCommand(commands, 'palette.open')).toMatchObject({
+      label: 'Rechercher',
+      category: 'Navigation',
+      scope: 'overlay',
+      enabled: true,
+    })
     expect(getCommand(commands, 'terminal.fullscreen')?.enabled).toBe(false)
     expect(getCommand(commands, 'account.sign-out')?.enabled).toBe(false)
   })
@@ -66,5 +83,18 @@ describe('command registry', () => {
     expect(dispatchCommandShortcut(shortcut(), commands, 'overlay', false)).toBeNull()
     expect(dispatchCommandShortcut(shortcut(), commands, 'terminal', false)?.id).toBe('terminal.fullscreen')
     expect(fullscreen).toHaveBeenCalledTimes(1)
+  })
+  it.each([
+    ['&', 'Digit1', false],
+    ['¡', 'Digit1', true],
+  ])('captures Alt+1 using its physical key (%s)', (key, code, mac) => {
+    const run = vi.fn()
+    const keyboardEvent = event(key, { code, ctrlKey: false, altKey: true })
+    expect(dispatchCommandShortcut(keyboardEvent, registry({ 'session.select.1': run }), 'terminal', mac)?.id).toBe(
+      'session.select.1',
+    )
+    expect(run).toHaveBeenCalledOnce()
+    expect(keyboardEvent.preventDefault).toHaveBeenCalledOnce()
+    expect(keyboardEvent.stopImmediatePropagation).toHaveBeenCalledOnce()
   })
 })

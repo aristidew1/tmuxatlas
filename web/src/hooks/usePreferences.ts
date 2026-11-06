@@ -28,6 +28,8 @@ export interface Preferences {
   lock_background_faster: boolean
   lock_background_minutes: number
   fullscreen_hide_alerts: boolean
+  /** Friendly host names, keyed by host id. */
+  host_aliases?: Record<string, string>
 }
 
 export const defaultPreferences: Preferences = {
@@ -122,46 +124,52 @@ export function usePreferencesProvider() {
     fetchPrefs()
   }, [fetchPrefs])
 
-  const enqueueSave = useCallback((payload: Preferences, version: number) => {
-    const request = async () => {
-      const res = await fetch('/api/preferences', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+  const enqueueSave = useCallback(
+    (payload: Preferences, version: number) => {
+      const request = async () => {
+        const res = await fetch('/api/preferences', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        if (!res.ok) {
+          throw new Error(`Failed to save preferences (${res.status}).`)
+        }
+        const saved = (await res.json()) as Preferences
+        confirmedRef.current = saved
+        failedPayloadRef.current = null
+        if (version === updateVersionRef.current) {
+          applyPrefs(saved)
+          setSaveError(null)
+          setSaveState('saved')
+        }
+      }
+
+      const result = queueRef.current.then(request, request)
+      queueRef.current = result.catch(() => {})
+      return result.catch(error => {
+        failedPayloadRef.current = payload
+        if (version === updateVersionRef.current) {
+          applyPrefs(confirmedRef.current)
+          setSaveState('error')
+          setSaveError(error instanceof Error ? error.message : 'Failed to save preferences.')
+        }
       })
-      if (!res.ok) {
-        throw new Error(`Failed to save preferences (${res.status}).`)
-      }
-      const saved = await res.json() as Preferences
-      confirmedRef.current = saved
-      failedPayloadRef.current = null
-      if (version === updateVersionRef.current) {
-        applyPrefs(saved)
-        setSaveError(null)
-        setSaveState('saved')
-      }
-    }
+    },
+    [applyPrefs],
+  )
 
-    const result = queueRef.current.then(request, request)
-    queueRef.current = result.catch(() => {})
-    return result.catch((error) => {
-      failedPayloadRef.current = payload
-      if (version === updateVersionRef.current) {
-        applyPrefs(confirmedRef.current)
-        setSaveState('error')
-        setSaveError(error instanceof Error ? error.message : 'Failed to save preferences.')
-      }
-    })
-  }, [applyPrefs])
-
-  const updatePrefs = useCallback(async (partial: Partial<Preferences>) => {
-    const merged = { ...prefsRef.current, ...partial }
-    const version = ++updateVersionRef.current
-    applyPrefs(merged)
-    setSaveError(null)
-    setSaveState('saving')
-    await enqueueSave(merged, version)
-  }, [applyPrefs, enqueueSave])
+  const updatePrefs = useCallback(
+    async (partial: Partial<Preferences>) => {
+      const merged = { ...prefsRef.current, ...partial }
+      const version = ++updateVersionRef.current
+      applyPrefs(merged)
+      setSaveError(null)
+      setSaveState('saving')
+      await enqueueSave(merged, version)
+    },
+    [applyPrefs, enqueueSave],
+  )
 
   const retrySave = useCallback(async () => {
     const payload = failedPayloadRef.current

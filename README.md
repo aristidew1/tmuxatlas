@@ -18,6 +18,10 @@ It also tracks AI coding agents (Claude Code, Codex, Copilot, OpenCode) running 
 - **Paste clipboard images** — paste a PNG, JPEG, or GIF (up to 10 MB) into a Claude Code or Codex terminal. Atlas saves a private copy on the session host and inserts it into the prompt. Remote hosts require an updated Atlas Agent. Copies remain in the session host’s `~/.cache/tmuxatlas/clipboard-images` directory until removed.
 - **Real-time session discovery** — sessions, windows, and panes update live via tmux control mode.
 - **AI agent monitoring** — see which agents are active, waiting for input, or errored across all sessions at a glance.
+- **Attention inbox and previews** — see sessions that need attention, inspect pane previews and reply to detected choices explicitly; the server rechecks the prompt before sending a reply.
+- **Workspace navigation** — switch terminal windows with tabs, view sessions in the Wall, and inspect host metrics on the Monitoring page.
+- **Session creation** — choose a project directory and optionally launch a supported agent when creating a session.
+- **Host aliases and shortcuts** — give hosts recognizable names and navigate with keyboard shortcuts and the command palette.
 - **Push notifications** — get browser/desktop notifications when an agent needs attention, even with the tab backgrounded.
 - **Installable Web App** — install the HTTPS Hub as a focused PWA on desktop or add it to an iPhone/iPad Home Screen.
 - **Command Palette** — search hosts, sessions, windows, agents, and application commands from one keyboard-first interface.
@@ -28,7 +32,7 @@ It also tracks AI coding agents (Claude Code, Codex, Copilot, OpenCode) running 
 ### Non-goals
 
 - **Multi-user** — TmuxAtlas is a single-user tool. One person, one dashboard. There are no user accounts, roles, or shared access controls.
-- **Agent orchestration** — TmuxAtlas doesn't start, stop, or control your agents. It watches and reports. You run your agents however you want; TmuxAtlas just tells you what they're doing.
+- **Agent orchestration** — Atlas does not orchestrate agents. On explicit user action it can launch an agent when creating a session or send a reply to a detected question, after server-side revalidation.
 - **tmux management** — TmuxAtlas doesn't manage layouts or workflows. The installer can optionally add a small, clearly marked `mouse on` block to `.tmux.conf`; all other tmux configuration stays yours.
 
 ## Installation
@@ -553,6 +557,7 @@ process environment variables take precedence. Start from
 | `TMUXATLAS_LISTEN` | `127.0.0.1:7654` | HTTP/WS origin listen address |
 | `TMUXATLAS_PUBLIC_URL` | `http://localhost:7654` | Browser-facing absolute HTTP(S) URL; HTTPS enables Secure cookies |
 | `TMUXATLAS_SESSION_TTL` | `24h` | Idle time before Passkey login is required again; accepts Go durations such as `168h` |
+| `TMUXATLAS_PROJECT_DIRS` | `~/Project,~/projects,~/code,~/src,~/dev` | Project roots on each session host, separated by commas or colons; their immediate directories are offered during session creation |
 | `TMUXATLAS_DISCOVERY_INTERVAL` | `2` | Session polling interval (seconds) |
 | `TMUXATLAS_NO_CONTROL_MODE` | `false` | Disable tmux control mode |
 | `TMUXATLAS_SOCKET` | platform default | Private Unix socket used by notify/agent-setup |

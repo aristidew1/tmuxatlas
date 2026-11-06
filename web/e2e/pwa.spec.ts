@@ -8,9 +8,6 @@ const baseURL = 'http://localhost:17655'
 let server: ChildProcessWithoutNullStreams
 let testHome: string
 
-test.use({
-  channel: process.env.CI ? undefined : 'chrome',
-})
 
 async function waitForServer() {
   for (let attempt = 0; attempt < 100; attempt++) {
@@ -35,7 +32,7 @@ test.beforeAll(async () => {
     '--discovery-interval', '60',
     '--no-auth',
   ], {
-    env: { ...process.env, HOME: testHome },
+    env: { ...process.env, HOME: testHome, XDG_CONFIG_HOME: join(testHome, 'config'), XDG_DATA_HOME: join(testHome, 'data'), XDG_CACHE_HOME: join(testHome, 'cache'), XDG_RUNTIME_DIR: join(testHome, 'runtime') },
   })
   await waitForServer()
 })
@@ -52,8 +49,8 @@ test('serves install metadata and a network-neutral root Service Worker', async 
   const manifest = await manifestResponse.json()
   expect(manifest).toMatchObject({
     id: '/',
-    name: 'TmuxAtlas',
-    short_name: 'TmuxAtlas',
+    name: 'Atlas',
+    short_name: 'Atlas',
     start_url: '/',
     scope: '/',
     display: 'standalone',
@@ -137,20 +134,20 @@ test('uses an explicit browser install gesture and suppresses repeat installatio
   }
 
   await dispatchInstallPrompt('dismissed')
-  await page.getByTitle('Settings').click()
-  await page.getByRole('button', { name: 'Install TmuxAtlas' }).click()
-  await expect(page.getByText('Installation dismissed.')).toBeVisible()
+  await page.getByTitle('Réglages').click()
+  await page.getByRole('button', { name: 'Installer Atlas' }).click()
+  await expect(page.getByText('Installation ignorée.')).toBeVisible()
   expect(await page.evaluate(() => (
     window as typeof window & { __installPromptCalls?: number }
   ).__installPromptCalls)).toBe(1)
 
   await dispatchInstallPrompt('accepted')
-  await page.getByRole('button', { name: 'Install TmuxAtlas' }).click()
-  await expect(page.getByText('Installation accepted.')).toBeVisible()
+  await page.getByRole('button', { name: 'Installer Atlas' }).click()
+  await expect(page.getByText('Installation acceptée.')).toBeVisible()
 
   await page.evaluate(() => window.dispatchEvent(new Event('appinstalled')))
-  await expect(page.getByTestId('pwa-installed')).toHaveText('Installed')
-  await expect(page.getByRole('button', { name: 'Install TmuxAtlas' })).toHaveCount(0)
+  await expect(page.getByTestId('pwa-installed')).toHaveText('Installé')
+  await expect(page.getByRole('button', { name: 'Installer Atlas' })).toHaveCount(0)
 })
 
 test('shows manual Add to Home Screen guidance on Apple mobile browsers', async ({ browser }) => {
@@ -162,11 +159,11 @@ test('shows manual Add to Home Screen guidance on Apple mobile browsers', async 
   })
   const page = await context.newPage()
   await page.goto(baseURL)
-  await page.getByTitle('Settings').click()
+  await page.getByTitle('Réglages').click()
 
-  await expect(page.getByTestId('pwa-ios-guidance')).toContainText('tap Share')
-  await expect(page.getByTestId('pwa-ios-guidance')).toContainText('Add to Home Screen')
-  await expect(page.getByRole('button', { name: 'Install TmuxAtlas' })).toHaveCount(0)
+  await expect(page.getByTestId('pwa-ios-guidance')).toContainText('touchez Partager')
+  await expect(page.getByTestId('pwa-ios-guidance')).toContainText('Sur l’écran d’accueil')
+  await expect(page.getByRole('button', { name: 'Installer Atlas' })).toHaveCount(0)
   await context.close()
 })
 
@@ -269,7 +266,7 @@ test('keeps Push payloads and notification clicks on the Hub origin', async ({ p
     },
   })
   expect(result.notifications[1]).toMatchObject({
-    title: 'TmuxAtlas',
+    title: 'Atlas',
     options: {
       data: { url: '/' },
     },

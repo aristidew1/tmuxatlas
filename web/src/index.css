@@ -77,9 +77,10 @@
   --terminal-chrome-border: var(--border);
   --terminal-chrome-shadow: none;
   --status-info: var(--primary);
-  --status-running: var(--success);
+  --status-running: var(--secondary-foreground);
   --status-waiting: var(--warning);
-  --status-done: var(--success);
+  --status-idle: var(--muted-foreground);
+  --status-done: var(--muted-foreground);
   --status-error: var(--destructive);
   --status-offline: var(--muted-foreground);
   --visual-viewport-height: 100dvh;
@@ -93,7 +94,10 @@
 }
 
 @theme inline {
-  --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-sans: 'Geist Variable', ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  /* The whole type scale: 11, 12, 14 and 24 px. */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
   --font-mono: 'JetBrains Mono', 'Symbols Nerd Font Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --font-display: 'VT323', ui-monospace, monospace;
   --color-background: var(--background);
@@ -222,7 +226,7 @@
   .ui-button[data-size='sm'] {
     min-block-size: var(--control-height-sm);
     padding-inline: 0.625rem;
-    font-size: 0.8125rem;
+    font-size: 0.75rem;
   }
 
   .ui-button[data-size='lg'] {
@@ -337,22 +341,23 @@
     --ui-status-color: var(--muted-foreground);
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    min-block-size: 1.5rem;
-    padding-inline: 0.5rem;
-    border: 1px solid color-mix(in oklch, var(--ui-status-color) 30%, transparent);
+    gap: 0.25rem;
+    min-block-size: 1.25rem;
+    padding-inline: 0.375rem 0.5rem;
     border-radius: 999px;
-    background: color-mix(in oklch, var(--ui-status-color) 9%, transparent);
+    background: color-mix(in oklch, var(--ui-status-color) 12%, transparent);
     color: var(--ui-status-color);
     font-family: var(--font-sans);
-    font-size: 0.75rem;
-    font-weight: 650;
+    font-size: var(--text-2xs);
+    font-weight: 550;
     line-height: 1;
+    white-space: nowrap;
   }
 
   .ui-status-pill[data-status='info'] { --ui-status-color: var(--status-info); }
   .ui-status-pill[data-status='running'] { --ui-status-color: var(--status-running); }
   .ui-status-pill[data-status='waiting'] { --ui-status-color: var(--status-waiting); }
+  .ui-status-pill[data-status='idle'] { --ui-status-color: var(--status-idle); }
   .ui-status-pill[data-status='done'] { --ui-status-color: var(--status-done); }
   .ui-status-pill[data-status='error'] { --ui-status-color: var(--status-error); }
   .ui-status-pill[data-status='offline'] { --ui-status-color: var(--status-offline); }
@@ -469,7 +474,7 @@
 
   .ui-overlay__title {
     color: var(--text-primary);
-    font-size: 1rem;
+    font-size: 0.875rem;
     font-weight: 700;
     line-height: 1.35;
   }
@@ -560,7 +565,7 @@
     background: transparent;
     color: var(--text-primary);
     font-family: var(--font-sans);
-    font-size: 0.8125rem;
+    font-size: 0.75rem;
     text-align: start;
   }
 
@@ -618,7 +623,7 @@
   .ui-toast__description {
     margin-block-start: 0.25rem;
     color: var(--text-secondary);
-    font-size: 0.8125rem;
+    font-size: 0.75rem;
     line-height: 1.4;
   }
 
@@ -657,7 +662,7 @@
 
   .ui-empty-state__title {
     color: var(--text-primary);
-    font-size: 1rem;
+    font-size: 0.875rem;
     font-weight: 700;
   }
 
@@ -706,6 +711,86 @@ html[data-visual-keyboard-open] .terminal-cockpit__identity {
 
 html[data-visual-viewport-constrained] .mobile-composer-meta {
   display: none;
+}
+
+
+/* Shared visual language --------------------------------------------------- */
+.ui-status-icon { color: var(--status-idle); }
+.ui-status-icon[data-status='running'] { color: var(--status-running); }
+.ui-status-icon[data-status='waiting'] { color: var(--status-waiting); }
+.ui-status-icon[data-status='error'] { color: var(--status-error); }
+.ui-status-icon[data-status='info'] { color: var(--status-info); }
+
+/* Rows and cards reflect the state that needs you: red for errors, amber for waits. */
+.tone-error { --tone: var(--status-error); }
+.tone-waiting { --tone: var(--status-waiting); }
+.tone-offline { --tone: var(--status-offline); }
+
+/* Surfaces separate by tone and depth, not by an outline on every box. */
+.atlas-surface {
+  background: var(--surface-raised);
+  border-radius: var(--radius-xl);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--foreground) 6%, transparent), var(--elevation-sm);
+}
+.atlas-surface[data-tone='error'] { box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--status-error) 55%, transparent); }
+.atlas-surface[data-tone='waiting'] { box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--status-waiting) 45%, transparent); }
+
+.atlas-eyebrow {
+  color: var(--text-secondary);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* A status change briefly lights up the element so it is noticed, then settles. */
+@keyframes atlas-status-flash {
+  0% { background-color: color-mix(in oklch, var(--flash, var(--primary)) 28%, transparent); }
+  100% { background-color: transparent; }
+}
+.atlas-flash { animation: atlas-status-flash 1.2s var(--motion-ease) 1; }
+
+@keyframes atlas-rise {
+  from { opacity: 0; transform: translateY(4px); }
+}
+.atlas-rise { animation: atlas-rise var(--motion-slow) var(--motion-ease) both; }
+
+/* Moving between views cross-fades instead of jumping. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--motion-slow);
+  animation-timing-function: var(--motion-ease);
+}
+
+/* Topographic contours: Atlas's signature, kept very faint behind empty surfaces. */
+.atlas-topo {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  color: var(--primary);
+  opacity: 0.1;
+  overflow: hidden;
+}
+.atlas-topo svg { width: 100%; height: 100%; display: block; }
+@keyframes atlas-drift {
+  from { transform: scale(1.08) translate3d(-1%, -1%, 0); }
+  to { transform: scale(1.08) translate3d(1%, 1%, 0); }
+}
+.atlas-topo svg { animation: atlas-drift 40s ease-in-out infinite alternate; }
+
+.scrollbar-none { scrollbar-width: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }
+
+/* Native select menus do not inherit the theme: without this they open white with pale text. */
+select option,
+select optgroup {
+  background-color: var(--popover);
+  color: var(--popover-foreground);
+}
+
+/* iOS zooms into focused fields under 16 px; keep touch inputs at 16 px. */
+@media (pointer: coarse) {
+  input, textarea, select { font-size: 16px !important; }
 }
 
 /* Scrollbar styling */
@@ -804,5 +889,19 @@ html[data-visual-viewport-constrained] .mobile-composer-meta {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* With the phone keyboard open, the tabs give way; the header stays so the sessions remain reachable. */
+@media (max-width: 767px) {
+  html[data-visual-keyboard-open] .terminal-window-tabs { display: none; }
+}
+
+/* Lot H : cible des onglets étendue vers le haut, sans empiéter sur le terminal. */
+@media (max-width: 767px) {
+  .terminal-window-tab::before {
+    content: '';
+    position: absolute;
+    inset: -8px 0 0;
   }
 }

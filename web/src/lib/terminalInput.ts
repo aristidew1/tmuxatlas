@@ -1,10 +1,6 @@
 export const MAX_TERMINAL_COMMAND_BODY_BYTES = 65_535
 
-export type TerminalInputErrorCode =
-  | 'body-too-large'
-  | 'not-connected'
-  | 'stale-connection'
-  | 'send-failed'
+export type TerminalInputErrorCode = 'body-too-large' | 'not-connected' | 'stale-connection' | 'send-failed'
 
 export class TerminalInputError extends Error {
   readonly code: TerminalInputErrorCode
@@ -40,7 +36,7 @@ export function encodeTerminalCommand(value: string): Uint8Array {
   if (body.byteLength > MAX_TERMINAL_COMMAND_BODY_BYTES) {
     throw new TerminalInputError(
       'body-too-large',
-      `Command is ${body.byteLength.toLocaleString()} UTF-8 bytes; the maximum is ${MAX_TERMINAL_COMMAND_BODY_BYTES.toLocaleString()}.`,
+      `La commande contient ${body.byteLength.toLocaleString()} octets UTF-8 ; le maximum est de ${MAX_TERMINAL_COMMAND_BODY_BYTES.toLocaleString()}.`,
     )
   }
 

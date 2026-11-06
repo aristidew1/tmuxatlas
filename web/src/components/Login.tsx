@@ -1,4 +1,7 @@
 import { useState, type FormEvent } from 'react'
+import { KeyRound } from 'lucide-react'
+import { AtlasMark, TopoBackground } from './Brand'
+import { Button } from './ui'
 
 interface LoginProps {
   mode: 'setup' | 'login'
@@ -18,75 +21,80 @@ export function Login({ mode, error, rpId, origin, onSubmit }: LoginProps) {
     event.preventDefault()
     if (submitting || (isSetup && !setupToken.trim())) return
     setSubmitting(true)
-    await onSubmit(setupToken, label)
-    setSubmitting(false)
+    try {
+      await onSubmit(setupToken, label)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
-    <div className="app-shell flex items-center justify-center bg-background ui-body-text text-sm">
-      <div className="w-full max-w-md p-8">
-        <div className="text-center mb-8">
-          <h1 className="ui-heading-text text-2xl text-foreground tracking-tight">TmuxAtlas</h1>
-          <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
-            all your tmux sessions<br />
-            all your ai agents<br />
-            one interface
-          </p>
+    <main className="app-shell relative flex items-center justify-center overflow-y-auto bg-background p-4 text-sm text-foreground">
+      <TopoBackground />
+      <div className="relative z-10 w-full max-w-sm py-8">
+        <div className="mb-8 flex flex-col items-center text-center">
+          <AtlasMark size={56} />
+          <h1 className="mt-4 text-2xl tracking-tight">Atlas</h1>
+          <p className="mt-2 text-sm text-muted-foreground">Vos sessions et vos agents, réunis au même endroit.</p>
         </div>
-
-        <div className="border border-border rounded-lg p-5 bg-card">
-          <h2 className="text-base text-foreground">
-            {isSetup ? 'Create the administrator passkey' : 'Sign in with a passkey'}
-          </h2>
-          <p className="text-xs font-normal text-muted-foreground mt-2 leading-relaxed">
-            Use this device, choose a password manager such as Proton Pass, Bitwarden, or
-            1Password, or select another device to scan a QR code with your iPhone.
+        <section className="atlas-surface rounded-xl p-5 sm:p-6">
+          <h2 className="text-sm font-medium">{isSetup ? 'Créer la passkey administrateur' : 'Se connecter'}</h2>
+          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+            Utilisez une passkey pour accéder à Atlas.
           </p>
-
-          <form onSubmit={handleSubmit} className="space-y-3 mt-5">
+          <form onSubmit={handleSubmit} className="mt-5 space-y-3">
             {isSetup && (
               <>
                 <input
                   type="text"
                   value={setupToken}
-                  onChange={(event) => setSetupToken(event.target.value)}
-                  placeholder="One-time setup token from server logs"
+                  onChange={event => setSetupToken(event.target.value)}
+                  placeholder="Jeton de configuration"
+                  aria-label="Jeton de configuration"
                   autoComplete="off"
                   autoFocus
                   spellCheck={false}
-                  className="w-full px-3 py-2 bg-input border border-border rounded text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="ui-focus-ring min-h-11 w-full rounded bg-input px-3 text-foreground placeholder:text-muted-foreground"
                 />
                 <input
                   type="text"
                   value={label}
-                  onChange={(event) => setLabel(event.target.value)}
-                  placeholder="Passkey label (optional)"
+                  onChange={event => setLabel(event.target.value)}
+                  placeholder="Libellé de la passkey (facultatif)"
+                  aria-label="Libellé de la passkey (facultatif)"
                   autoComplete="off"
-                  className="w-full px-3 py-2 bg-input border border-border rounded text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="ui-focus-ring min-h-11 w-full rounded bg-input px-3 text-foreground placeholder:text-muted-foreground"
                 />
               </>
             )}
-
-            {error && <p className="text-sm font-normal text-destructive">{error}</p>}
-
-            <button
+            {error && (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            )}
+            <Button
               type="submit"
-              disabled={submitting || (isSetup && !setupToken.trim())}
-              className="w-full px-3 py-2 bg-primary text-primary-foreground rounded font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
+              variant="primary"
+              className="w-full"
+              disabled={isSetup && !setupToken.trim()}
+              loading={submitting}
+              loadingLabel={isSetup ? 'Création de la passkey…' : 'En attente de la passkey…'}
+              leadingIcon={<KeyRound size={16} aria-hidden="true" />}
             >
-              {submitting
-                ? (isSetup ? 'Creating passkey...' : 'Waiting for passkey...')
-                : (isSetup ? 'Create passkey' : 'Sign in with passkey')}
-            </button>
+              {isSetup ? 'Créer la passkey' : 'Se connecter avec une passkey'}
+            </Button>
           </form>
-
-          {(rpId || origin) && (
-            <p className="text-[11px] font-normal text-muted-foreground mt-4 break-all">
-              Passkey domain: {rpId || origin}
+          <details className="mt-5 text-xs text-muted-foreground">
+            <summary className="ui-focus-ring cursor-pointer py-2">Comment utiliser une passkey ?</summary>
+            <p className="pt-2 leading-relaxed">
+              Utilisez cet appareil, un gestionnaire de mots de passe ou un autre appareil en scannant son code QR.
             </p>
+          </details>
+          {(rpId || origin) && (
+            <p className="mt-4 break-all text-2xs text-muted-foreground">Domaine de la passkey : {rpId || origin}</p>
           )}
-        </div>
+        </section>
       </div>
-    </div>
+    </main>
   )
 }

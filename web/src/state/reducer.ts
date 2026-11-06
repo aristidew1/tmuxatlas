@@ -45,10 +45,7 @@ export const initialApplicationState: ApplicationState = {
   connection: 'connecting',
 }
 
-export function applicationStateReducer(
-  state: ApplicationState,
-  action: ApplicationStateAction,
-): ApplicationState {
+export function applicationStateReducer(state: ApplicationState, action: ApplicationStateAction): ApplicationState {
   switch (action.type) {
     case 'connection':
       return { ...state, connection: action.state }
@@ -56,25 +53,21 @@ export function applicationStateReducer(
       return {
         ...state,
         connection: 'rehydrating',
-        rehydrateReason: action.reason || 'State resynchronization is required.',
+        rehydrateReason: action.reason || 'Une resynchronisation de l’état est nécessaire.',
       }
     case 'reload-required':
       return {
         ...state,
         connection: 'reload-required',
-        reloadReason: action.reason || 'This page must be reloaded to match the Hub.',
+        reloadReason: action.reason || 'Cette page doit être rechargée pour correspondre au Hub.',
       }
     case 'snapshot': {
       const envelope = action.envelope
-      if (
-        envelope.schema_version !== STATE_SCHEMA_VERSION ||
-        !envelope.instance_id ||
-        envelope.revision < 0
-      ) {
+      if (envelope.schema_version !== STATE_SCHEMA_VERSION || !envelope.instance_id || envelope.revision < 0) {
         return {
           ...state,
           connection: 'reload-required',
-          reloadReason: 'The Hub state schema is not supported by this page.',
+          reloadReason: 'Cette page ne prend pas en charge le format d’état du Hub.',
         }
       }
       return {
@@ -95,7 +88,7 @@ function applyDelta(state: ApplicationState, envelope: DeltaEnvelope): Applicati
     return {
       ...state,
       connection: 'reload-required',
-      reloadReason: 'The Hub state schema changed.',
+      reloadReason: 'Le format d’état du Hub a changé.',
     }
   }
   if (envelope.revision <= state.revision && envelope.instance_id === state.instanceId) {
@@ -112,8 +105,8 @@ function applyDelta(state: ApplicationState, envelope: DeltaEnvelope): Applicati
       connection: 'rehydrating',
       rehydrateReason:
         envelope.instance_id !== state.instanceId
-          ? 'The Hub process restarted.'
-          : 'A state revision gap was detected.',
+          ? 'Le processus du Hub a redémarré.'
+          : 'Une révision de l’état est manquante.',
     }
   }
 
@@ -126,7 +119,7 @@ function applyDelta(state: ApplicationState, envelope: DeltaEnvelope): Applicati
     return {
       ...state,
       connection: 'rehydrating',
-      rehydrateReason: 'A state update could not be applied.',
+      rehydrateReason: 'Une mise à jour de l’état n’a pas pu être appliquée.',
     }
   }
   return {

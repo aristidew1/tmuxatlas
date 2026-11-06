@@ -1,17 +1,9 @@
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type CompositionEvent,
-  type KeyboardEvent,
-} from 'react'
-import {
-  MAX_TERMINAL_COMMAND_BODY_BYTES,
-  terminalCommandBodyByteLength,
-} from '../lib/terminalInput'
+import { useEffect, useLayoutEffect, useRef, useState, type CompositionEvent, type KeyboardEvent } from 'react'
+import { MAX_TERMINAL_COMMAND_BODY_BYTES, terminalCommandBodyByteLength } from '../lib/terminalInput'
 
 interface MobileInputComposerProps {
+  expanded?: boolean
+  onClose?: () => void
   targetKey: string
   targetLabel: string
   initialDraft: string
@@ -20,13 +12,16 @@ interface MobileInputComposerProps {
 }
 
 export function MobileInputComposer({
+  expanded: controlledExpanded,
+  onClose,
   targetKey,
   targetLabel,
   initialDraft,
   onDraftChange,
   onSend,
 }: MobileInputComposerProps) {
-  const [expanded, setExpanded] = useState(false)
+  const [localExpanded, setExpanded] = useState(false)
+  const expanded = controlledExpanded ?? localExpanded
   const [draft, setDraft] = useState(initialDraft)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
@@ -67,7 +62,8 @@ export function MobileInputComposer({
   }, [expanded])
 
   const toggle = () => {
-    setExpanded(value => !value)
+    if (controlledExpanded !== undefined) onClose?.()
+    else setExpanded(value => !value)
   }
 
   const submit = async () => {
@@ -78,7 +74,7 @@ export function MobileInputComposer({
     setFeedback('')
     if (submittedByteLength > MAX_TERMINAL_COMMAND_BODY_BYTES) {
       setError(
-        `Draft is ${submittedByteLength.toLocaleString()} UTF-8 bytes; the maximum is ${MAX_TERMINAL_COMMAND_BODY_BYTES.toLocaleString()}.`,
+        `Le brouillon contient ${submittedByteLength.toLocaleString()} octets UTF-8 ; le maximum est ${MAX_TERMINAL_COMMAND_BODY_BYTES.toLocaleString()}.`,
       )
       return
     }
@@ -91,10 +87,10 @@ export function MobileInputComposer({
         setDraft('')
         onDraftChange(targetKey, '')
       }
-      setFeedback(`Sent to ${targetLabel}.`)
+      setFeedback(`Envoyé à ${targetLabel}.`)
       window.requestAnimationFrame(() => textareaRef.current?.focus())
     } catch (sendError) {
-      setError(sendError instanceof Error ? sendError.message : 'The command could not be sent.')
+      setError(sendError instanceof Error ? sendError.message : 'Impossible d’envoyer la commande.')
     } finally {
       setSending(false)
     }
@@ -120,26 +116,33 @@ export function MobileInputComposer({
   }
 
   return (
-    <div className="mt-1 rounded border border-border bg-card">
-      <button
-        type="button"
-        aria-label={expanded ? 'Collapse Mobile Input Composer' : 'Expand Mobile Input Composer'}
-        aria-expanded={expanded}
-        onClick={toggle}
-        className="flex min-h-11 w-full items-center justify-between px-3 text-xs font-mono"
-      >
-        <span>Input Composer</span>
-        <span className="text-muted-foreground">{expanded ? 'Hide' : draft ? 'Draft' : 'Show'}</span>
-      </button>
+    <div className="bg-card">
+      {controlledExpanded === undefined && (
+        <button
+          type="button"
+          aria-label={expanded ? 'Replier le compositeur' : 'Ouvrir le compositeur'}
+          aria-expanded={expanded}
+          onClick={toggle}
+          className="flex min-h-11 w-full items-center justify-between px-3 text-xs font-mono"
+        >
+          <span>Compositeur</span>
+          <span className="text-muted-foreground">{expanded ? 'Replier' : draft ? 'Brouillon' : 'Afficher'}</span>
+        </button>
+      )}
       {expanded && (
         <div className="border-t border-border p-2">
+          {controlledExpanded !== undefined && (
+            <button type="button" onClick={onClose} className="min-h-11 text-xs">
+              Replier
+            </button>
+          )}
           <div className="flex items-end gap-2">
             <textarea
               ref={textareaRef}
               rows={1}
               value={draft}
-              aria-label={`Command draft for ${targetLabel}`}
-              placeholder="Compose text; Enter adds a line"
+              aria-label={`Brouillon pour ${targetLabel}`}
+              placeholder="Composez votre texte ; Entrée ajoute une ligne"
               autoCorrect="off"
               autoCapitalize="none"
               autoComplete="off"
@@ -164,26 +167,30 @@ export function MobileInputComposer({
             />
             <button
               type="button"
-              aria-label={`Send command to ${targetLabel}`}
+              aria-label={`Envoyer la commande à ${targetLabel}`}
               disabled={sending || tooLarge}
               onClick={() => void submit()}
               className="min-h-11 min-w-16 rounded border border-primary/50 bg-primary/15 px-3 text-sm text-primary disabled:opacity-40"
             >
-              {sending ? 'Sending…' : 'Send'}
+              {sending ? 'Envoi…' : 'Envoyer'}
             </button>
           </div>
-          <div className="mobile-composer-meta mt-1 flex min-w-0 justify-between gap-2 text-[11px] text-muted-foreground">
-            <span className="min-w-0">⌘/Ctrl+Enter sends; ordinary Enter adds a newline.</span>
+          <div className="mobile-composer-meta mt-1 flex min-w-0 justify-between gap-2 text-2xs text-muted-foreground">
+            <span className="min-w-0">⌘/Ctrl+Entrée envoie ; Entrée ajoute une ligne.</span>
             <span className={tooLarge ? 'shrink-0 text-destructive' : 'shrink-0'}>
-              {byteLength.toLocaleString()} / {MAX_TERMINAL_COMMAND_BODY_BYTES.toLocaleString()} bytes
+              {byteLength.toLocaleString()} / {MAX_TERMINAL_COMMAND_BODY_BYTES.toLocaleString()} octets
             </span>
           </div>
           {(error || tooLarge) && (
             <p className="mt-1 text-xs text-destructive" role="alert">
-              {error || `Draft exceeds ${MAX_TERMINAL_COMMAND_BODY_BYTES.toLocaleString()} UTF-8 bytes.`}
+              {error || `Le brouillon dépasse ${MAX_TERMINAL_COMMAND_BODY_BYTES.toLocaleString()} octets UTF-8.`}
             </p>
           )}
-          {feedback && <p className="mt-1 text-xs text-success" role="status">{feedback}</p>}
+          {feedback && (
+            <p className="mt-1 text-xs text-success" role="status">
+              {feedback}
+            </p>
+          )}
         </div>
       )}
     </div>

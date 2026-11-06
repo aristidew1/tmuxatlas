@@ -7,6 +7,9 @@ import { AgentStatusList, normalizeAgentStatus, SetupCommandBox, type StatusResu
 import { PasskeySettings } from './PasskeySettings'
 import type { PWAInstallState } from '../hooks/usePWAInstall'
 import { Button, ToastProvider, useToast } from './ui'
+import { useApplicationState } from '../state/provider'
+import { useHostLabel } from '../lib/hostLabel'
+import { ChevronRight } from 'lucide-react'
 
 const terminalFontFamilies = [
   'Space Mono',
@@ -20,46 +23,54 @@ const terminalFontFamilies = [
 ]
 
 const timestampFormats = [
-  { value: 'relative', label: 'Relative (2m ago)' },
-  { value: 'absolute', label: 'Absolute (14:32:05)' },
+  { value: 'relative', label: 'Relative (il y a 2 min)' },
+  { value: 'absolute', label: 'Absolue (14:32:05)' },
 ]
 
 const shortcutOptions = [
-  { value: 'ctrl+k', label: 'Ctrl+K / Cmd+K' },
-  { value: 'ctrl+p', label: 'Ctrl+P / Cmd+P' },
-  { value: 'ctrl+space', label: 'Ctrl+Space' },
+  { value: 'ctrl+k', label: 'Ctrl K / ⌘ K' },
+  { value: 'ctrl+p', label: 'Ctrl P / ⌘ P' },
+  { value: 'ctrl+space', label: 'Ctrl Espace' },
 ]
 
 const notifStatuses = [
-  { value: 'waiting', label: 'Waiting' },
-  { value: 'error', label: 'Error' },
-  { value: 'completed', label: 'Completed' },
+  { value: 'waiting', label: 'En attente' },
+  { value: 'error', label: 'Erreur' },
+  { value: 'completed', label: 'Terminé' },
 ]
 
 // Customizable CSS variables exposed to users, grouped by purpose
 const customizableVars = [
   { key: '--primary', label: 'Accent' },
-  { key: '--background', label: 'Background' },
-  { key: '--foreground', label: 'Foreground' },
-  { key: '--border', label: 'Border' },
-  { key: '--card', label: 'Card' },
-  { key: '--muted', label: 'Muted' },
-  { key: '--success', label: 'Success' },
-  { key: '--warning', label: 'Warning' },
-  { key: '--destructive', label: 'Destructive' },
+  { key: '--background', label: 'Arrière-plan' },
+  { key: '--foreground', label: 'Premier plan' },
+  { key: '--border', label: 'Bordure' },
+  { key: '--card', label: 'Carte' },
+  { key: '--muted', label: 'Atténué' },
+  { key: '--success', label: 'Succès' },
+  { key: '--warning', label: 'Avertissement' },
+  { key: '--destructive', label: 'Destruction' },
 ]
 
-const sectionIds = ['appearance', 'terminal', 'interface', 'notifications', 'agents', 'security'] as const
+const sectionIds = ['appearance', 'terminal', 'interface', 'notifications', 'hosts', 'agents', 'security'] as const
 
-function Section({ id, title, description, children }: { id: string; title: string; description?: string; children: React.ReactNode }) {
+function Section({
+  id,
+  title,
+  description,
+  children,
+}: {
+  id: string
+  title: string
+  description?: string
+  children: React.ReactNode
+}) {
   return (
-    <section id={id} className="rounded-lg border border-border bg-card p-5 scroll-mt-4">
-      <h3 className="text-sm font-semibold text-foreground mb-0.5 uppercase tracking-wider">{title}</h3>
+    <section id={id} className="atlas-surface rounded-lg p-5 scroll-mt-4">
+      <h3 className="text-sm font-medium text-foreground mb-0.5">{title}</h3>
       {description && <p className="text-xs text-muted-foreground mb-4">{description}</p>}
       {!description && <div className="mb-4" />}
-      <div className="flex flex-col gap-3">
-        {children}
-      </div>
+      <div className="flex flex-col gap-3">{children}</div>
     </section>
   )
 }
@@ -75,33 +86,53 @@ function Row({ label, description, children }: { label: string; description?: st
         <div className="text-sm text-foreground">{label}</div>
         {description && <div className="text-xs text-muted-foreground mt-0.5">{description}</div>}
       </div>
-      <div className="shrink-0">
-        {children}
-      </div>
+      <div className="shrink-0">{children}</div>
     </div>
   )
 }
 
-function SelectInput({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
+function SelectInput({
+  value,
+  onChange,
+  options,
+}: {
+  value: string
+  onChange: (v: string) => void
+  options: { value: string; label: string }[]
+}) {
   return (
     <select
       value={value}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={e => onChange(e.target.value)}
       className="bg-input border border-border rounded px-2 py-1 text-sm text-foreground outline-none focus:border-primary min-w-[160px]"
     >
       {options.map(o => (
-        <option key={o.value} value={o.value}>{o.label}</option>
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
       ))}
     </select>
   )
 }
 
-function NumberInput({ value, onChange, min, max, step }: { value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number }) {
+function NumberInput({
+  value,
+  onChange,
+  min,
+  max,
+  step,
+}: {
+  value: number
+  onChange: (v: number) => void
+  min?: number
+  max?: number
+  step?: number
+}) {
   return (
     <input
       type="number"
       value={value}
-      onChange={(e) => onChange(Number(e.target.value))}
+      onChange={e => onChange(Number(e.target.value))}
       min={min}
       max={max}
       step={step}
@@ -140,7 +171,7 @@ function ColorInput({ value, onChange }: { value: string; onChange: (v: string) 
     <input
       type="color"
       value={value}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={e => onChange(e.target.value)}
       className="w-8 h-6 rounded border border-border cursor-pointer bg-transparent"
     />
   )
@@ -162,13 +193,14 @@ function resolvedColor(cssVar: string, customTheme: Record<string, string>): str
   return cssColorToHex(computed || raw) ?? '#888888'
 }
 
-const sectionLabels: Record<typeof sectionIds[number], string> = {
-  appearance: 'Appearance',
+const sectionLabels: Record<(typeof sectionIds)[number], string> = {
+  appearance: 'Apparence',
   terminal: 'Terminal',
   interface: 'Interface',
   notifications: 'Notifications',
+  hosts: 'Hôtes',
   agents: 'Agents',
-  security: 'Security',
+  security: 'Sécurité',
 }
 
 interface SettingsProps {
@@ -181,6 +213,8 @@ interface SettingsProps {
 
 function SettingsContent({ pushState, onPushSubscribe, onPushUnsubscribe, onLogout, pwaInstall }: SettingsProps) {
   const { prefs, updatePrefs, saveState, saveError, retrySave } = usePreferences()
+  const { hosts } = useApplicationState()
+  const hostLabel = useHostLabel()
   const { dismiss, toast } = useToast()
   const previousSaveState = useRef(saveState)
   const feedbackToast = useRef<string | null>(null)
@@ -212,14 +246,14 @@ function SettingsContent({ pushState, onPushSubscribe, onPushUnsubscribe, onLogo
 
     if (saveState === 'saved') {
       feedbackToast.current = toast({
-        title: 'Settings saved',
-        description: 'Your preferences are up to date.',
+        title: 'Réglages enregistrés',
+        description: 'Vos préférences sont à jour.',
         variant: 'success',
       })
     } else if (saveState === 'error') {
       feedbackToast.current = toast({
-        title: 'Settings not saved',
-        description: saveError ?? 'Check your connection and try again.',
+        title: 'Réglages non enregistrés',
+        description: saveError ?? 'Vérifiez votre connexion et réessayez.',
         variant: 'error',
         duration: 0,
       })
@@ -230,10 +264,7 @@ function SettingsContent({ pushState, onPushSubscribe, onPushUnsubscribe, onLogo
     await updatePrefs(partial)
   }
 
-  const updateNested = async <K extends keyof Preferences>(
-    key: K,
-    nested: Partial<Preferences[K]>,
-  ) => {
+  const updateNested = async <K extends keyof Preferences>(key: K, nested: Partial<Preferences[K]>) => {
     const current = prefs[key]
     await update({ [key]: { ...(typeof current === 'object' ? current : {}), ...nested } } as Partial<Preferences>)
   }
@@ -257,9 +288,7 @@ function SettingsContent({ pushState, onPushSubscribe, onPushUnsubscribe, onLogo
 
   const toggleNotifStatus = async (status: string) => {
     const current = prefs.notifications.statuses
-    const next = current.includes(status)
-      ? current.filter(s => s !== status)
-      : [...current, status]
+    const next = current.includes(status) ? current.filter(s => s !== status) : [...current, status]
     await updateNested('notifications', { statuses: next })
   }
 
@@ -268,22 +297,19 @@ function SettingsContent({ pushState, onPushSubscribe, onPushUnsubscribe, onLogo
   const hasCustomColors = Object.values(customTheme).some(v => !!v)
 
   return (
-    <div
-      className="flex-1 p-6 overflow-y-auto ui-body-text text-sm"
-      aria-busy={saveState === 'saving' || undefined}
-    >
+    <div className="flex-1 p-6 overflow-y-auto ui-body-text text-sm" aria-busy={saveState === 'saving' || undefined}>
       <div className="max-w-2xl">
         <div className="flex items-start justify-between gap-4 mb-5">
-          <h2 className="ui-heading-text text-xl text-foreground">Settings</h2>
+          <h2 className="ui-heading-text text-2xl text-foreground">Réglages</h2>
           <div className="min-h-7 text-right">
             {saveState === 'saving' && (
               <span className="text-xs text-primary" role="status" aria-live="polite">
-                Saving…
+                Enregistrement…
               </span>
             )}
             {saveState === 'saved' && (
               <span className="text-xs text-success" role="status" aria-live="polite">
-                Saved
+                Enregistré
               </span>
             )}
             {saveState === 'error' && (
@@ -293,16 +319,16 @@ function SettingsContent({ pushState, onPushSubscribe, onPushUnsubscribe, onLogo
                 aria-live="assertive"
               >
                 <span>
-                  <strong className="font-semibold">Changes were not saved.</strong>
+                  <strong className="font-semibold">Les modifications n’ont pas été enregistrées.</strong>
                   {saveError && ` ${saveError}`}
                 </span>
                 <Button
                   size="sm"
                   variant="secondary"
-                  aria-label="Retry saving preferences"
+                  aria-label="Réessayer d’enregistrer les préférences"
                   onClick={() => void retrySave()}
                 >
-                  Retry
+                  Réessayer
                 </Button>
               </div>
             )}
@@ -323,8 +349,8 @@ function SettingsContent({ pushState, onPushSubscribe, onPushUnsubscribe, onLogo
         </nav>
 
         <div className="flex flex-col gap-4">
-          {/* ── Appearance ── */}
-          <Section id="appearance" title="Appearance" description="Theme, colors, fonts, and display formatting">
+          {/* ── Apparence ── */}
+          <Section id="appearance" title="Apparence" description="Thème, couleurs et format d’affichage">
             <div className="grid grid-cols-2 gap-2">
               {Object.values(themePresets).map(theme => (
                 <button
@@ -338,10 +364,22 @@ function SettingsContent({ pushState, onPushSubscribe, onPushUnsubscribe, onLogo
                   )}
                 >
                   <div className="flex items-center gap-2 mb-1.5">
-                    <div className="w-4 h-4 rounded-full border border-border" style={{ background: theme.xterm.background }} />
-                    <div className="w-4 h-4 rounded-full border border-border" style={{ background: theme.xterm.foreground }} />
-                    <div className="w-4 h-4 rounded-full border border-border" style={{ background: theme.xterm.blue }} />
-                    <div className="w-4 h-4 rounded-full border border-border" style={{ background: theme.xterm.green }} />
+                    <div
+                      className="w-4 h-4 rounded-full border border-border"
+                      style={{ background: theme.xterm.background }}
+                    />
+                    <div
+                      className="w-4 h-4 rounded-full border border-border"
+                      style={{ background: theme.xterm.foreground }}
+                    />
+                    <div
+                      className="w-4 h-4 rounded-full border border-border"
+                      style={{ background: theme.xterm.blue }}
+                    />
+                    <div
+                      className="w-4 h-4 rounded-full border border-border"
+                      style={{ background: theme.xterm.green }}
+                    />
                   </div>
                   <div className="text-sm font-semibold">{theme.label}</div>
                 </button>
@@ -356,9 +394,13 @@ function SettingsContent({ pushState, onPushSubscribe, onPushUnsubscribe, onLogo
                 onClick={() => setShowCustomColors(v => !v)}
                 className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
               >
-                <span className={cn('inline-block transition-transform text-xs', showCustomColors && 'rotate-90')}>&#9654;</span>
-                Custom Colors
-                {hasCustomColors && <span className="text-xs text-primary">(active)</span>}
+                <ChevronRight
+                  size={14}
+                  aria-hidden="true"
+                  className={cn('transition-transform', showCustomColors && 'rotate-90')}
+                />
+                Couleurs personnalisées
+                {hasCustomColors && <span className="text-xs text-primary">(actives)</span>}
               </button>
               {showCustomColors && (
                 <div className="mt-3 flex flex-col gap-2">
@@ -367,7 +409,7 @@ function SettingsContent({ pushState, onPushSubscribe, onPushUnsubscribe, onLogo
                       <div key={key} className="flex items-center gap-2">
                         <ColorInput
                           value={resolvedColor(key, customTheme)}
-                          onChange={(hex) => handleCustomColorChange(key, hex)}
+                          onChange={hex => handleCustomColorChange(key, hex)}
                         />
                         <span className="text-xs text-muted-foreground">{label}</span>
                       </div>
@@ -378,7 +420,7 @@ function SettingsContent({ pushState, onPushSubscribe, onPushUnsubscribe, onLogo
                       onClick={handleResetCustomColors}
                       className="text-xs text-muted-foreground hover:text-destructive transition-colors self-start mt-1"
                     >
-                      Reset to preset defaults
+                      Rétablir les couleurs du thème
                     </button>
                   )}
                 </div>
@@ -387,17 +429,17 @@ function SettingsContent({ pushState, onPushSubscribe, onPushUnsubscribe, onLogo
 
             <Divider />
 
-            <Row label="Timestamp Format" description="How timestamps are shown in the UI">
+            <Row label="Format des dates" description="Affichage des dates dans l’interface">
               <SelectInput
                 value={prefs.timestamp_format}
-                onChange={(v) => update({ timestamp_format: v })}
+                onChange={v => update({ timestamp_format: v })}
                 options={timestampFormats}
               />
             </Row>
-            <Row label="Overview Refresh" description="Stats refresh interval in seconds">
+            <Row label="Actualisation de la vue d’ensemble" description="Intervalle d’actualisation en secondes">
               <NumberInput
                 value={prefs.overview_refresh_interval}
-                onChange={(v) => update({ overview_refresh_interval: Math.max(1, Math.min(60, v)) })}
+                onChange={v => update({ overview_refresh_interval: Math.max(1, Math.min(60, v)) })}
                 min={1}
                 max={60}
               />
@@ -405,80 +447,74 @@ function SettingsContent({ pushState, onPushSubscribe, onPushUnsubscribe, onLogo
           </Section>
 
           {/* ── Terminal ── */}
-          <Section id="terminal" title="Terminal" description="Font, scrollback, and fullscreen behavior">
-            <Row label="Font Family" description="Monospace font for the terminal">
+          <Section id="terminal" title="Terminal" description="Police, historique et plein écran">
+            <Row label="Police" description="Police à chasse fixe du terminal">
               <SelectInput
                 value={prefs.terminal.font_family}
-                onChange={(v) => updateNested('terminal', { font_family: v })}
+                onChange={v => updateNested('terminal', { font_family: v })}
                 options={terminalFontFamilies.map(f => ({ value: f, label: f }))}
               />
             </Row>
-            <Row label="Font Size" description="Terminal text size in pixels">
+            <Row label="Taille de police" description="Taille du texte en pixels">
               <NumberInput
                 value={prefs.terminal.font_size}
-                onChange={(v) => updateNested('terminal', { font_size: Math.max(8, Math.min(32, v)) })}
+                onChange={v => updateNested('terminal', { font_size: Math.max(8, Math.min(32, v)) })}
                 min={8}
                 max={32}
               />
             </Row>
-            <Row label="Scrollback" description="Number of lines to keep in history">
+            <Row label="Historique" description="Nombre de lignes à conserver">
               <NumberInput
                 value={prefs.terminal.scrollback}
-                onChange={(v) => updateNested('terminal', { scrollback: Math.max(100, Math.min(100000, v)) })}
+                onChange={v => updateNested('terminal', { scrollback: Math.max(100, Math.min(100000, v)) })}
                 min={100}
                 max={100000}
                 step={500}
               />
             </Row>
             <Divider />
-            <Row label="Hide Alerts in Fullscreen" description="Hide the agent alert banner when terminal is fullscreen">
-              <Toggle
-                checked={prefs.fullscreen_hide_alerts}
-                onChange={(v) => update({ fullscreen_hide_alerts: v })}
-              />
+            <Row label="Masquer les alertes en plein écran" description="Masquer la bannière des agents en plein écran">
+              <Toggle checked={prefs.fullscreen_hide_alerts} onChange={v => update({ fullscreen_hide_alerts: v })} />
             </Row>
           </Section>
 
           {/* ── Interface ── */}
-          <Section id="interface" title="Interface" description="Layout, sidebar, and keyboard shortcuts">
-            <Row label="Default View" description="View shown on launch">
+          <Section id="interface" title="Interface" description="Disposition, barre latérale et raccourcis">
+            <Row label="Vue par défaut" description="Vue affichée au démarrage">
               <SelectInput
                 value={prefs.default_view}
-                onChange={(v) => update({ default_view: v })}
+                onChange={v => update({ default_view: v })}
                 options={[
-                  { value: 'overview', label: 'Overview' },
-                  { value: 'last-session', label: 'Last Session' },
+                  { value: 'overview', label: 'Vue d’ensemble' },
+                  { value: 'last-session', label: 'Dernière session' },
                 ]}
               />
             </Row>
-            <Row label="Sidebar Default" description="Sidebar state on load">
+            <Row label="Barre latérale par défaut" description="État de la barre au chargement">
               <Toggle
                 checked={prefs.sidebar.default_collapsed}
-                onChange={(v) => updateNested('sidebar', { default_collapsed: v })}
-                label={prefs.sidebar.default_collapsed ? 'Collapsed' : 'Expanded'}
+                onChange={v => updateNested('sidebar', { default_collapsed: v })}
+                label={prefs.sidebar.default_collapsed ? 'Repliée' : 'Déployée'}
               />
             </Row>
-            <Row label="Sidebar Collapse Mode" description="How sidebar behaves when collapsed">
+            <Row label="Mode de repli" description="Comportement de la barre repliée">
               <SelectInput
                 value={prefs.sidebar.collapse_mode || 'small'}
-                onChange={(v) => updateNested('sidebar', { collapse_mode: v })}
+                onChange={v => updateNested('sidebar', { collapse_mode: v })}
                 options={[
-                  { value: 'small', label: 'Narrow column' },
-                  { value: 'hidden', label: 'Completely hidden' },
+                  { value: 'small', label: 'Colonne étroite' },
+                  { value: 'hidden', label: 'Complètement masquée' },
                 ]}
               />
             </Row>
-            <Row label="Sparklines" description="Show activity sparklines in sidebar">
-              <Toggle
-                checked={prefs.sparklines_visible}
-                onChange={(v) => update({ sparklines_visible: v })}
-              />
+            <Row label="Graphiques d’activité" description="Afficher les graphiques d’activité dans la barre">
+              <Toggle checked={prefs.sparklines_visible} onChange={v => update({ sparklines_visible: v })} />
             </Row>
             <Divider />
-            <Row label="Quick Switcher Shortcut" description="Keyboard shortcut to open quick switcher">
+            <Row label="Raccourci du sélecteur rapide" description="Raccourci clavier du sélecteur rapide">
               <SelectInput
                 value={prefs.quick_switcher_shortcut}
-                onChange={(v) => update({ quick_switcher_shortcut: v })}
+                onChange={v => update({ quick_switcher_shortcut: v })}
                 options={shortcutOptions}
               />
             </Row>
@@ -486,62 +522,72 @@ function SettingsContent({ pushState, onPushSubscribe, onPushUnsubscribe, onLogo
             <div className="py-1.5" data-testid="pwa-install">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex-1">
-                  <div className="text-sm text-foreground">Install TmuxAtlas</div>
+                  <div className="text-sm text-foreground">Installer Atlas</div>
                   <div className="text-xs text-muted-foreground mt-0.5">
-                    Open this Hub in a focused standalone app.
+                    Ouvrir ce Hub dans une application autonome.
                   </div>
                 </div>
                 {pwaInstall.isStandalone ? (
-                  <span className="text-xs text-success" data-testid="pwa-installed">Installed</span>
+                  <span className="text-xs text-success" data-testid="pwa-installed">
+                    Installé
+                  </span>
                 ) : pwaInstall.canPrompt ? (
                   <button
                     type="button"
                     onClick={() => void pwaInstall.install()}
                     className="px-3 py-1.5 rounded text-xs border border-primary text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
                   >
-                    Install TmuxAtlas
+                    Installer Atlas
                   </button>
                 ) : pwaInstall.isAppleMobile ? (
-                  <span className="text-xs text-muted-foreground">Manual install</span>
+                  <span className="text-xs text-muted-foreground">Installation manuelle</span>
                 ) : (
-                  <span className="text-xs text-muted-foreground">Browser menu</span>
+                  <span className="text-xs text-muted-foreground">Menu du navigateur</span>
                 )}
               </div>
               {!pwaInstall.isStandalone && pwaInstall.isAppleMobile && (
-                <p className="mt-3 rounded border border-border bg-background p-3 text-xs text-muted-foreground" data-testid="pwa-ios-guidance">
-                  On iPhone or iPad, tap Share, then choose Add to Home Screen.
+                <p
+                  className="mt-3 rounded border border-border bg-background p-3 text-xs text-muted-foreground"
+                  data-testid="pwa-ios-guidance"
+                >
+                  Sur iPhone ou iPad, touchez Partager puis Sur l’écran d’accueil.
                 </p>
               )}
               <div className="mt-2 text-xs text-muted-foreground" aria-live="polite">
-                {pwaInstall.outcome === 'dismissed' && 'Installation dismissed. You can try again when your browser offers the install action.'}
-                {pwaInstall.outcome === 'accepted' && 'Installation accepted. TmuxAtlas will open from your app launcher.'}
+                {pwaInstall.outcome === 'dismissed' &&
+                  'Installation ignorée. Vous pourrez réessayer depuis votre navigateur.'}
+                {pwaInstall.outcome === 'accepted' &&
+                  'Installation acceptée. Atlas sera accessible depuis vos applications.'}
               </div>
             </div>
           </Section>
 
           {/* ── Notifications ── */}
-          <Section id="notifications" title="Notifications" description="Push alerts and agent event notifications">
-            <Row label="Push Alerts" description={
-              pushState === 'unsupported'
-                ? 'Requires HTTPS or localhost with a supported browser'
-                : pushState === 'denied'
-                ? 'Blocked by browser — reset in browser site settings'
-                : pushState === 'subscribed'
-                ? 'Receiving push alerts for agent events'
-                : 'Enable to receive alerts even when the tab is closed'
-            }>
+          <Section id="notifications" title="Notifications" description="Notifications et événements des agents">
+            <Row
+              label="Notifications"
+              description={
+                pushState === 'unsupported'
+                  ? 'Nécessite HTTPS ou localhost et un navigateur compatible'
+                  : pushState === 'denied'
+                    ? 'Bloquées par le navigateur : modifiez les réglages du site'
+                    : pushState === 'subscribed'
+                      ? 'Notifications des agents activées'
+                      : 'Recevoir les alertes même lorsque l’onglet est fermé'
+              }
+            >
               {pushState === 'unsupported' ? (
-                <span className="text-xs text-muted-foreground">Unavailable</span>
+                <span className="text-xs text-muted-foreground">Indisponible</span>
               ) : pushState === 'denied' ? (
-                <span className="text-xs text-destructive">Blocked</span>
+                <span className="text-xs text-destructive">Bloqué</span>
               ) : (
                 <Toggle
                   checked={pushState === 'subscribed'}
-                  onChange={(v) => v ? onPushSubscribe() : onPushUnsubscribe()}
+                  onChange={v => (v ? onPushSubscribe() : onPushUnsubscribe())}
                 />
               )}
             </Row>
-            <Row label="Alert Statuses" description="Which agent statuses trigger alerts">
+            <Row label="États déclenchant une alerte" description="Choisissez les états des agents à signaler">
               <div className="flex gap-2">
                 {notifStatuses.map(s => (
                   <button
@@ -559,18 +605,39 @@ function SettingsContent({ pushState, onPushSubscribe, onPushUnsubscribe, onLogo
                 ))}
               </div>
             </Row>
-            <Row label="Auto-dismiss" description="Seconds before alerts auto-dismiss (0 = manual)">
+            <Row label="Fermeture automatique" description="Délai en secondes avant fermeture (0 = manuelle)">
               <NumberInput
                 value={prefs.agent_banner.auto_dismiss_seconds}
-                onChange={(v) => updateNested('agent_banner', { auto_dismiss_seconds: Math.max(0, Math.min(300, v)) })}
+                onChange={v => updateNested('agent_banner', { auto_dismiss_seconds: Math.max(0, Math.min(300, v)) })}
                 min={0}
                 max={300}
               />
             </Row>
           </Section>
 
+          <Section id="hosts" title="Hôtes" description="Donnez un nom facile à reconnaître à chaque hôte.">
+            {hosts.length === 0 && <p className="text-xs text-muted-foreground">Aucun hôte disponible.</p>}
+            {hosts.map(host => (
+              <label key={host.id} title={host.id} className="flex min-h-11 items-center justify-between gap-4 text-sm">
+                <span className="truncate">{hostLabel(host.id, host.name === host.id ? 'Hôte' : host.name)}</span>
+                <input
+                  aria-label={`Alias de ${host.name === host.id ? 'cet hôte' : host.name}`}
+                  value={prefs.host_aliases?.[host.id] ?? ''}
+                  placeholder={host.name === host.id ? 'Hôte' : host.name}
+                  onChange={event => {
+                    const aliases = { ...prefs.host_aliases }
+                    if (event.target.value) aliases[host.id] = event.target.value
+                    else delete aliases[host.id]
+                    void update({ host_aliases: aliases })
+                  }}
+                  className="min-h-11 w-40 rounded bg-input px-2 text-sm ui-focus-ring"
+                />
+              </label>
+            ))}
+          </Section>
+
           {/* ── Agents ── */}
-          <Section id="agents" title="Agents" description="Agent installation and hook configuration status">
+          <Section id="agents" title="Agents" description="Installation des agents et configuration des intégrations">
             {agentStatus ? (
               <div className="flex flex-col gap-3">
                 <AgentStatusList agents={agentStatus.agents} />
@@ -578,7 +645,8 @@ function SettingsContent({ pushState, onPushSubscribe, onPushUnsubscribe, onLogo
                   <SetupCommandBox command={agentStatus.setup_command} />
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    This Hub does not require local agent setup. Install and pair an Agent on each tmux host.
+                    Ce Hub ne nécessite pas de configuration locale. Installez et associez un agent sur chaque hôte
+                    tmux.
                   </p>
                 )}
                 <button
@@ -586,44 +654,44 @@ function SettingsContent({ pushState, onPushSubscribe, onPushUnsubscribe, onLogo
                   disabled={agentLoading}
                   className="self-start px-3 py-1.5 rounded text-xs border border-border text-foreground hover:bg-muted transition-colors disabled:opacity-50"
                 >
-                  {agentLoading ? 'Checking...' : 'Refresh'}
+                  {agentLoading ? 'Vérification…' : 'Actualiser'}
                 </button>
               </div>
             ) : (
               <p className="text-sm text-muted-foreground">
-                {agentLoading ? 'Checking agents...' : 'Could not load agent status.'}
+                {agentLoading ? 'Vérification des agents…' : 'Impossible de charger l’état des agents.'}
               </p>
             )}
           </Section>
 
-          {/* ── Security ── */}
+          {/* ── Sécurité ── */}
           {onLogout && (
-            <Section id="security" title="Security" description="Passkeys, session locking, and sign out">
+            <Section id="security" title="Sécurité" description="Passkeys, verrouillage et déconnexion">
               <PasskeySettings />
               <Divider />
-              <Row label="Auto-lock Timeout" description="Sign out after idle inactivity (0 = disabled)">
+              <Row label="Délai de verrouillage" description="Déconnexion après inactivité (0 = désactivé)">
                 <div className="flex items-center gap-2">
                   <NumberInput
                     value={prefs.lock_timeout_minutes}
-                    onChange={(v) => update({ lock_timeout_minutes: Math.max(0, Math.min(120, v)) })}
+                    onChange={v => update({ lock_timeout_minutes: Math.max(0, Math.min(120, v)) })}
                     min={0}
                     max={120}
                   />
                   <span className="text-xs text-muted-foreground">min</span>
                 </div>
               </Row>
-              <Row label="Lock Faster When Backgrounded" description="Use a shorter timeout when the tab is hidden or minimized">
-                <Toggle
-                  checked={prefs.lock_background_faster}
-                  onChange={(v) => update({ lock_background_faster: v })}
-                />
+              <Row
+                label="Verrouiller plus vite en arrière-plan"
+                description="Réduire le délai lorsque l’onglet est masqué"
+              >
+                <Toggle checked={prefs.lock_background_faster} onChange={v => update({ lock_background_faster: v })} />
               </Row>
               {prefs.lock_background_faster && (
-                <Row label="Background Timeout" description="Idle timeout when tab is hidden">
+                <Row label="Délai en arrière-plan" description="Délai d’inactivité lorsque l’onglet est masqué">
                   <div className="flex items-center gap-2">
                     <NumberInput
                       value={prefs.lock_background_minutes}
-                      onChange={(v) => update({ lock_background_minutes: Math.max(1, Math.min(120, v)) })}
+                      onChange={v => update({ lock_background_minutes: Math.max(1, Math.min(120, v)) })}
                       min={1}
                       max={120}
                     />
@@ -632,12 +700,12 @@ function SettingsContent({ pushState, onPushSubscribe, onPushUnsubscribe, onLogo
                 </Row>
               )}
               <Divider />
-              <Row label="Sign Out" description="End your current session">
+              <Row label="Déconnexion" description="Terminer la session actuelle">
                 <button
                   onClick={onLogout}
                   className="px-3 py-1.5 rounded text-sm border border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground transition-colors"
                 >
-                  Sign out
+                  Se déconnecter
                 </button>
               </Row>
             </Section>

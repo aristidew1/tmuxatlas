@@ -19,7 +19,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     disabled,
     leadingIcon,
     loading = false,
-    loadingLabel = 'Working…',
+    loadingLabel = 'En cours…',
     size = 'md',
     type = 'button',
     variant = 'secondary',

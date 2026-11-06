@@ -127,7 +127,9 @@ export function Terminal({
     scrollToBottom,
     adjustFontSize,
     sendInput,
+    sendRawInput,
     setVoiceHold,
+    readScreen,
     sendCommand,
     copySelection,
     pasteClipboard,
@@ -149,6 +151,11 @@ export function Terminal({
     setVoiceHold(on)
     focus()
   }, [focus, setVoiceHold])
+
+  const submitPrompt = useCallback(() => {
+    try { sendRawInput(new Uint8Array([13])) } catch { /* the Terminal reports the disconnect */ }
+    focus()
+  }, [focus, sendRawInput])
 
   const workspaceConnection = connectionState ?? deriveTerminalWorkspaceConnection({
     hub: hubConnection ?? 'ready',
@@ -469,6 +476,8 @@ export function Terminal({
           key={targetKey}
           disabled={!claudeActive || mic.state !== 'on' || workspaceConnection !== 'connected'}
           onHold={holdSpace}
+          readScreen={readScreen}
+          onSubmit={submitPrompt}
         />,
         talkSlot,
       )}

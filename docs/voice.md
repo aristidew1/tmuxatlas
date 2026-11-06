@@ -27,15 +27,17 @@ The microphone turns on when you open a local session; the browser asks for perm
 
 Claude Code needs voice enabled in hold mode, its default. Run `/voice hold` once if it is not; the setting persists.
 
-1. Click **Talk** in the status bar below the Terminal. It is active only while Claude Code runs in the active pane. TmuxAtlas holds the space bar until you click again, so you can release the button while you speak.
-2. Click **● Listening** to stop. Claude inserts the transcription into its prompt; edit it and press Enter to send. Claude's `voice.autoSubmit` setting can send it automatically.
+1. Click **Talk** in the status bar below the Terminal. It is active only while Claude Code runs in the active pane. TmuxAtlas holds the space bar until you stop, so you can release the button while you speak.
+2. When you finish, click one of the two buttons that replace **Talk**:
+   - The **square** stops recording and leaves the transcription in the prompt, so you can edit it and press Enter.
+   - The **arrow** stops recording and sends the prompt once Claude has inserted the transcription. If Claude was not listening or could not transcribe, nothing is sent.
 
 ## Limits
 
 - **Local sessions only.** The button appears only for sessions on the machine serving the page. Sessions on other hosts are not relayed.
 - **Secure context.** Browsers allow the microphone only over HTTPS or on `localhost`.
 - **One stream per host.** The newest tab takes over and the previous one stops.
-- **Claude prompt and default key binding.** **Talk** repeats the space bar on the server, because Claude treats a 200 ms gap as a release. It needs Claude's prompt and the default `space` binding; in a Claude dialog or the transcript viewer, the spaces act as key presses there.
+- **Claude prompt and default key binding.** **Talk** repeats the space bar on the server, because Claude treats a 200 ms gap as a release. It needs Claude's prompt and the default `space` binding; in a Claude dialog or the transcript viewer, the spaces act as key presses there. The arrow also reads Claude's footer on screen, so a Claude Code update that rewords it could stop the arrow from working.
 
 Audio is forwarded to the host in real time while the microphone is on, whether or not you are dictating, and is never stored.
 

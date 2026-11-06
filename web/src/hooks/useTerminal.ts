@@ -247,6 +247,18 @@ export function useTerminal(
     }
   }, [])
 
+  /** Returns the rows currently on screen. */
+  const readScreen = useCallback((): string[] => {
+    const term = termRef.current
+    if (!term) return []
+    const buffer = term.buffer.active
+    const rows: string[] = []
+    for (let row = 0; row < term.rows; row += 1) {
+      rows.push(buffer.getLine(buffer.viewportY + row)?.translateToString(true) ?? '')
+    }
+    return rows
+  }, [])
+
   const sendInput = useCallback((data: string): boolean => {
     try {
       const bytes = mobileInput
@@ -808,6 +820,7 @@ export function useTerminal(
     sendRawInput,
     sendCommand,
     setVoiceHold,
+    readScreen,
     imagePasteStatus,
     captureConnection,
     copySelection,

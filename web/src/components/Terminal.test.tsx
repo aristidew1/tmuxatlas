@@ -38,6 +38,7 @@ const terminal = {
   findPrevious: vi.fn<() => Promise<boolean>>(),
   clearSearch: vi.fn(),
   setVoiceHold: vi.fn<(on: boolean) => boolean>(),
+  readScreen: vi.fn<() => string[]>(() => []),
 }
 
 const mic = {
@@ -274,7 +275,8 @@ describe('Terminal microphone', () => {
 
 describe('Claude talk button', () => {
   const talk = () => screen.getByRole('button', { name: 'Talk to Claude' })
-  const stop = () => screen.getByRole('button', { name: 'Stop talking to Claude' })
+  const stop = () => screen.getByRole('button', { name: 'Stop talking and edit the prompt' })
+  const send = () => screen.getByRole('button', { name: 'Stop talking and send the prompt' })
 
   let slot: HTMLElement
 
@@ -282,6 +284,7 @@ describe('Claude talk button', () => {
     slot = document.body.appendChild(document.createElement('div'))
     mic.available = true
     mic.state = 'on'
+    mic.error = ''
     terminal.setVoiceHold.mockReset().mockReturnValue(true)
   })
   afterEach(() => {
@@ -295,7 +298,7 @@ describe('Claude talk button', () => {
     expect(screen.getByRole('toolbar', { name: 'Terminal controls' })).not.toContainElement(talk())
   })
 
-  it('holds the space bar from one click to the next and sends nothing else', () => {
+  it('shows Stop and Send while holding, and Stop leaves the transcript in the prompt', () => {
     render(<Terminal sessionName="s" hostId="h" hostLocal talkSlot={slot} claudeActive />)
     terminal.focus.mockClear()
     terminal.sendRawInput.mockClear()
@@ -303,12 +306,79 @@ describe('Claude talk button', () => {
     expect(terminal.setVoiceHold).toHaveBeenCalledTimes(1)
     expect(terminal.setVoiceHold).toHaveBeenLastCalledWith(true)
     expect(terminal.focus).toHaveBeenCalled()
-    expect(stop()).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByRole('button', { name: 'Talk to Claude' })).toBeNull()
+    expect(slot).toContainElement(send())
     fireEvent.click(stop())
     expect(terminal.setVoiceHold).toHaveBeenCalledTimes(2)
     expect(terminal.setVoiceHold).toHaveBeenLastCalledWith(false)
-    expect(talk()).toHaveAttribute('aria-pressed', 'false')
+    expect(talk()).toBeEnabled()
     expect(terminal.sendRawInput).not.toHaveBeenCalled()
+  })
+
+  describe('Send', () => {
+    const footer = (text: string) => terminal.readScreen.mockReturnValue(['> hello', `  auto mode on   ${text}`])
+    const advance = (ms: number) => act(() => { vi.advanceTimersByTime(ms) })
+    const startListening = () => {
+      render(<Terminal sessionName="s" hostId="h" hostLocal talkSlot={slot} claudeActive />)
+      fireEvent.click(talk())
+      footer('listening…')
+      advance(200)
+    }
+
+    beforeEach(() => {
+      vi.useFakeTimers()
+      terminal.sendRawInput.mockClear()
+      terminal.readScreen.mockReset().mockReturnValue([])
+    })
+    afterEach(() => { vi.useRealTimers() })
+
+    it('presses Enter only once Claude has finished the transcript', () => {
+      startListening()
+      fireEvent.click(send())
+      expect(terminal.setVoiceHold).toHaveBeenLastCalledWith(false)
+      expect(send()).toBeDisabled()
+      advance(1_000)
+      footer('Voice: processing…')
+      advance(5_000)
+      expect(terminal.sendRawInput).not.toHaveBeenCalled()
+      footer('')
+      advance(1_000)
+      expect(terminal.sendRawInput).toHaveBeenCalledTimes(1)
+      expect(terminal.sendRawInput).toHaveBeenCalledWith(new Uint8Array([13]))
+      expect(talk()).toBeEnabled()
+    })
+
+    it.each([
+      ['Claude reports a failure', 'No speech detected.', 'could not transcribe'],
+      ['transcription never ends', 'Voice: processing…', 'did not finish'],
+    ])('sends nothing when %s', (_name, text, message) => {
+      startListening()
+      fireEvent.click(send())
+      footer(text)
+      advance(31_000)
+      expect(terminal.sendRawInput).not.toHaveBeenCalled()
+      expect(screen.getByRole('alert').textContent).toContain(message)
+    })
+
+    it('sends nothing when Claude never listened, as in a Claude dialog', () => {
+      render(<Terminal sessionName="s" hostId="h" hostLocal talkSlot={slot} claudeActive />)
+      fireEvent.click(talk())
+      advance(500)
+      fireEvent.click(send())
+      advance(1_000)
+      expect(terminal.sendRawInput).not.toHaveBeenCalled()
+      expect(screen.getByRole('alert').textContent).toContain('not listening')
+    })
+
+    it('ignores words on screen above the footer', () => {
+      render(<Terminal sessionName="s" hostId="h" hostLocal talkSlot={slot} claudeActive />)
+      fireEvent.click(talk())
+      terminal.readScreen.mockReturnValue(['listening…', ...Array.from({ length: 8 }, (_, row) => `output ${row}`)])
+      advance(500)
+      fireEvent.click(send())
+      advance(1_000)
+      expect(terminal.sendRawInput).not.toHaveBeenCalled()
+    })
   })
 
   it('releases when the target changes, the microphone stops, or Zen Mode hides it', () => {
@@ -316,7 +386,7 @@ describe('Claude talk button', () => {
     fireEvent.click(talk())
     view.rerender(<Terminal sessionName="other" hostId="h" hostLocal talkSlot={slot} claudeActive />)
     expect(terminal.setVoiceHold).toHaveBeenLastCalledWith(false)
-    expect(talk()).toHaveAttribute('aria-pressed', 'false')
+    expect(talk()).toBeEnabled()
 
     fireEvent.click(talk())
     mic.state = 'off'

@@ -15,6 +15,7 @@ It also tracks AI coding agents (Claude Code, Codex, Copilot, OpenCode) running 
 ### Key features
 
 - **Full terminal in the browser** — PTY-backed xterm.js rendering. Type, scroll, resize — it just works.
+- **Paste clipboard images** — paste a PNG, JPEG, or GIF (up to 10 MB) into a Claude Code or Codex terminal. Atlas saves a private copy on the session host and inserts it into the prompt. Remote hosts require an updated Atlas Agent. Copies remain in the session host’s `~/.cache/tmuxatlas/clipboard-images` directory until removed.
 - **Real-time session discovery** — sessions, windows, and panes update live via tmux control mode.
 - **AI agent monitoring** — see which agents are active, waiting for input, or errored across all sessions at a glance.
 - **Push notifications** — get browser/desktop notifications when an agent needs attention, even with the tab backgrounded.

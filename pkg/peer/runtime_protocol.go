@@ -19,6 +19,7 @@ const (
 	CapabilitySessionActions = "session-actions"
 	CapabilityRequestResults = "request-results"
 	CapabilityPTYControl     = "pty-control"
+	CapabilityClipboardImage = "clipboard-image"
 
 	maxRuntimeIDLength = 128
 	maxOperationLength = 64
@@ -31,6 +32,7 @@ var RuntimeCapabilities = []string{
 	CapabilitySessionActions,
 	CapabilityRequestResults,
 	CapabilityPTYControl,
+	CapabilityClipboardImage,
 }
 
 type SessionTarget struct {

@@ -183,6 +183,12 @@ func (owner *PTYOwner) Bridge() {
 		return
 	}
 	browserWS := owner.BrowserWS
+	var browserWriteMu sync.Mutex
+	browserWrite := func(kind int, data []byte) error {
+		browserWriteMu.Lock()
+		defer browserWriteMu.Unlock()
+		return browserWS.WriteMessage(kind, data)
+	}
 	browserWS.SetReadLimit(maxPTYFrameData)
 	peerWS.SetReadLimit(maxPTYFrameData + ptyDataHeaderSize)
 
@@ -210,13 +216,19 @@ func (owner *PTYOwner) Bridge() {
 				if duplicate {
 					continue
 				}
-				if err := browserWS.WriteMessage(websocket.BinaryMessage, frame.Payload); err != nil {
+				if err := browserWrite(websocket.BinaryMessage, frame.Payload); err != nil {
 					return
 				}
 			case websocket.TextMessage:
 				frame, err := DecodePTYControlFrame(data)
 				if err != nil {
 					return
+				}
+				if frame.Type == "image-result" {
+					result, _ := json.Marshal(map[string]string{"type": "image-result", "error": frame.Reason})
+					if err := browserWrite(websocket.TextMessage, result); err != nil {
+						return
+					}
 				}
 				if frame.Type == "close" || frame.Type == "error" {
 					return
@@ -230,6 +242,7 @@ func (owner *PTYOwner) Bridge() {
 		defer owner.wg.Done()
 		defer func() { done <- struct{}{} }()
 		var dataSequence, controlSequence uint64
+		unsupportedImage := false
 		for {
 			messageType, data, err := browserWS.ReadMessage()
 			if err != nil {
@@ -244,18 +257,32 @@ func (owner *PTYOwner) Bridge() {
 				}
 			case websocket.TextMessage:
 				var browserResize struct {
-					Type string `json:"type"`
-					Cols uint16 `json:"cols"`
-					Rows uint16 `json:"rows"`
+					Type  string `json:"type"`
+					Cols  uint16 `json:"cols"`
+					Rows  uint16 `json:"rows"`
+					Data  string `json:"data"`
+					Final bool   `json:"final"`
 				}
-				if err := jsonUnmarshalStrict(data, &browserResize); err != nil ||
-					browserResize.Type != "resize" || browserResize.Cols == 0 || browserResize.Rows == 0 {
+				if err := jsonUnmarshalStrict(data, &browserResize); err != nil {
+					return
+				}
+				if browserResize.Type == "image" && !owner.connection.Supports(CapabilityClipboardImage) {
+					if !unsupportedImage {
+						result, _ := json.Marshal(map[string]string{"type": "image-result", "error": "The remote Atlas agent must be updated to support image paste."})
+						if browserWrite(websocket.TextMessage, result) != nil {
+							return
+						}
+					}
+					unsupportedImage = !browserResize.Final
+					continue
+				}
+				if browserResize.Type != "image" && (browserResize.Type != "resize" || browserResize.Cols == 0 || browserResize.Rows == 0) {
 					return
 				}
 				controlSequence++
 				frame, err := EncodePTYControlFrame(PTYControlFrame{
-					Version: PTYFrameVersion, Type: "resize", Sequence: controlSequence,
-					Cols: browserResize.Cols, Rows: browserResize.Rows,
+					Version: PTYFrameVersion, Type: browserResize.Type, Sequence: controlSequence,
+					Cols: browserResize.Cols, Rows: browserResize.Rows, Data: browserResize.Data, Final: browserResize.Final,
 				})
 				if err != nil || peerWS.WriteMessage(websocket.TextMessage, frame) != nil {
 					return

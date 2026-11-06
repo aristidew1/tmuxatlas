@@ -112,6 +112,26 @@ func TestPTYBridgeFramesInputOutputAndResizeOnBoundStream(t *testing.T) {
 		t.Fatalf("resize=%#v err=%v", resize, err)
 	}
 
+	if err := browserClient.WriteMessage(websocket.TextMessage, []byte(`{"type":"image","data":"AQID","final":true}`)); err != nil {
+		t.Fatal(err)
+	}
+	_, imageData, err := agentClient.ReadMessage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	imageFrame, err := DecodePTYControlFrame(imageData)
+	if err != nil || imageFrame.Type != "image" || imageFrame.Data != "AQID" || !imageFrame.Final {
+		t.Fatalf("image=%#v err=%v", imageFrame, err)
+	}
+	result, _ := EncodePTYControlFrame(PTYControlFrame{Version: PTYFrameVersion, Type: "image-result", Sequence: 1})
+	if err := agentClient.WriteMessage(websocket.TextMessage, result); err != nil {
+		t.Fatal(err)
+	}
+	_, resultData, err := browserClient.ReadMessage()
+	if err != nil || string(resultData) != `{"error":"","type":"image-result"}` {
+		t.Fatalf("result=%s err=%v", resultData, err)
+	}
+
 	output, _ := EncodePTYDataFrame(PTYDataOutput, 1, []byte("only-this-browser"))
 	if err := agentClient.WriteMessage(websocket.BinaryMessage, output); err != nil {
 		t.Fatal(err)

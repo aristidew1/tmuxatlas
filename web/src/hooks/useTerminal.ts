@@ -102,6 +102,8 @@ export function useTerminal(
   const followOutputRef = useRef(true)
   const { prefs } = usePreferences()
 
+  const [imagePasteStatus, setImagePasteStatus] = useState('')
+  const imageUploadRef = useRef(false)
   const [ptyState, setPtyState] = useState<PtyConnectionState>('disconnected')
   const [hasSelection, setHasSelection] = useState(false)
   const [isAtBottom, setIsAtBottom] = useState(true)
@@ -266,6 +268,28 @@ export function useTerminal(
     return true
   }, [captureConnection, mobileInput, sendRawInput])
 
+  const pasteImage = useCallback(async (blob: Blob) => {
+    const capture = captureConnection()
+    if (!capture) throw new Error('The Terminal is not connected.')
+    if (imageUploadRef.current) throw new Error('An image upload is already in progress.')
+    if (!blob.size || blob.size > 10 * 1024 * 1024) throw new Error('Image must be smaller than 10 MB.')
+    imageUploadRef.current = true
+    setImagePasteStatus('Sending image…')
+    try {
+      const bytes = new Uint8Array(await blob.arrayBuffer())
+      const socket = assertCurrentConnection(capture)
+      for (let offset = 0; offset < bytes.length; offset += 24 * 1024) {
+        const chunk = bytes.subarray(offset, offset + 24 * 1024)
+        let binary = ''
+        for (const byte of chunk) binary += String.fromCharCode(byte)
+        socket.send(JSON.stringify({ type: 'image', data: btoa(binary), final: offset + chunk.length === bytes.length }))
+      }
+    } catch (error) {
+      imageUploadRef.current = false
+      throw error
+    }
+  }, [assertCurrentConnection, captureConnection])
+
   const connect = useCallback((container: HTMLElement) => {
     cleanupTerminal()
     if (!hostId) {
@@ -281,6 +305,8 @@ export function useTerminal(
     setIsAtBottom(true)
     setHasNewOutput(false)
     setPtyState('connecting')
+    imageUploadRef.current = false
+    setImagePasteStatus('')
 
     const xtermTheme = getXtermTheme(prefs.theme)
     const fontFamily = `'${prefs.terminal.font_family}', 'Symbols Nerd Font Mono', 'JetBrains Mono', Menlo, Monaco, monospace`
@@ -397,6 +423,11 @@ export function useTerminal(
     )
 
     term.attachCustomKeyEventHandler(event => {
+      // Let the browser dispatch its native paste event. Otherwise xterm sends
+      // Ctrl-V to the remote process, which reads the server's clipboard.
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'v') {
+        return false
+      }
       if (
         event.type === 'keydown' &&
         (event.metaKey || event.ctrlKey) &&
@@ -412,6 +443,17 @@ export function useTerminal(
       return true
     })
 
+    const handleImagePaste = (event: ClipboardEvent) => {
+      const item = Array.from(event.clipboardData?.items ?? []).find(entry => entry.type.startsWith('image/'))
+      if (!item) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      const blob = item.getAsFile()
+      if (!blob) { setImagePasteStatus('Could not read the image from the clipboard.'); return }
+      void pasteImage(blob).catch(error => setImagePasteStatus(error instanceof Error ? error.message : 'Image paste failed.'))
+    }
+    container.addEventListener('paste', handleImagePaste, true)
+    domCleanupRef.current.push(() => container.removeEventListener('paste', handleImagePaste, true))
     container.addEventListener('mousedown', flushPendingClipboard, true)
     container.addEventListener('keydown', flushPendingClipboard, true)
     domCleanupRef.current.push(
@@ -468,6 +510,16 @@ export function useTerminal(
 
       socket.onmessage = event => {
         if (!isCurrent()) return
+        if (typeof event.data === 'string') {
+          try {
+            const message = JSON.parse(event.data) as { type?: string; error?: string }
+            if (message.type === 'image-result') {
+              imageUploadRef.current = false
+              setImagePasteStatus(message.error ? `Image paste failed: ${message.error}` : 'Image pasted into Terminal.')
+              return
+            }
+          } catch { /* ordinary terminal output */ }
+        }
         if (!followOutputRef.current) setHasNewOutput(true)
         term.write(
           event.data instanceof ArrayBuffer
@@ -483,6 +535,7 @@ export function useTerminal(
       socket.onclose = () => {
         if (!isCurrent()) return
         wsRef.current = null
+        if (imageUploadRef.current) { imageUploadRef.current = false; setImagePasteStatus('Image paste failed: Terminal disconnected.') }
         setPtyState('reconnecting')
         if (document.hidden) return
         const attempt = reconnectAttemptsRef.current++
@@ -533,6 +586,7 @@ export function useTerminal(
     flushPendingClipboard,
     hostId,
     mobileInput,
+    pasteImage,
     prefs.terminal.font_family,
     prefs.terminal.font_size,
     prefs.terminal.scrollback,
@@ -633,11 +687,19 @@ export function useTerminal(
   }, [assertCurrentConnection, focus, sendRawInput])
 
   const pasteClipboard = useCallback(async (): Promise<PendingTerminalPaste | null> => {
+    if (navigator.clipboard?.read) {
+      let items: ClipboardItem[] = []
+      try { items = await navigator.clipboard.read() } catch { /* fall back to text */ }
+      for (const item of items) {
+        const type = item.types.find(value => value.startsWith('image/'))
+        if (type) { await pasteImage(await item.getType(type)); focus(); return null }
+      }
+    }
     const paste = await prepareClipboardPaste()
     if (paste.multiline) return paste
     commitClipboardPaste(paste)
     return null
-  }, [commitClipboardPaste, prepareClipboardPaste])
+  }, [commitClipboardPaste, focus, pasteImage, prepareClipboardPaste])
 
   const selectAll = useCallback(() => {
     termRef.current?.selectAll()
@@ -747,6 +809,7 @@ export function useTerminal(
     sendRawInput,
     sendCommand,
     setVoiceHold,
+    imagePasteStatus,
     captureConnection,
     copySelection,
     prepareClipboardPaste,

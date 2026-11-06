@@ -139,6 +139,7 @@ async function openWorkspace(
   theme: 'light' | 'dark' | 'retro-blue',
   viewport: { width: number; height: number },
   expandComposer: boolean,
+  terminalMessages?: (string | Buffer)[],
 ) {
   await page.setViewportSize(viewport)
   await page.addInitScript(now => {
@@ -152,6 +153,12 @@ async function openWorkspace(
     socket.send(JSON.stringify(snapshot))
   })
   await page.routeWebSocket('**/ws/session**', socket => {
+    socket.onMessage(message => {
+      terminalMessages?.push(message)
+      if (typeof message === 'string' && message.includes('\"type\":\"image\"') && message.includes('\"final\":true')) {
+        socket.send(JSON.stringify({ type: 'image-result', error: '' }))
+      }
+    })
     socket.send([
       '\u001b[1;36mTmuxAtlas Workspace\u001b[0m',
       '',
@@ -221,4 +228,29 @@ test('Retro Workspace at 844×390', async ({ page }) => {
     animations: 'disabled',
     caret: 'hide',
   })
+})
+
+
+test('Ctrl+V pastes browser text and images without sending the control key', async ({ page, context }) => {
+  const messages: (string | Buffer)[] = []
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: baseURL })
+  await openWorkspace(page, 'dark', { width: 1024, height: 768 }, false, messages)
+  const terminal = page.locator('.xterm-helper-textarea')
+  await terminal.focus()
+  await page.evaluate(() => navigator.clipboard.writeText('clipboard text'))
+  await page.keyboard.press('Control+V')
+  await expect.poll(() => messages.filter(Buffer.isBuffer).map(data => data.toString()).join('')).toContain('clipboard text')
+  expect(messages.filter(Buffer.isBuffer).map(data => data.toString()).join('')).not.toContain('\x16')
+
+  await page.evaluate(async () => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 2; canvas.height = 2
+    const png = await new Promise<Blob>(resolve => canvas.toBlob(blob => resolve(blob!), 'image/png'))
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })])
+  })
+  await terminal.focus()
+  await page.keyboard.press('Control+V')
+  await expect.poll(() => messages.some(message => typeof message === 'string' && message.includes('"type":"image"'))).toBe(true)
+  await expect(page.getByRole('status').filter({ hasText: 'Image pasted into Terminal.' })).toBeVisible()
+  expect(messages.filter(Buffer.isBuffer).map(data => data.toString()).join('')).not.toContain('\x16')
 })

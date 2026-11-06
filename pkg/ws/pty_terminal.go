@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"sync"
+
+	"github.com/LosFurina/tmuxatlas/pkg/clipboardimage"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -29,10 +32,12 @@ func NewPTYTerminalHandler(tmuxPath string, activityTracker *activity.Tracker) *
 
 // resizeMsg is the JSON control message for resize events
 type resizeMsg struct {
-	Type string `json:"type"`
-	Cols uint16 `json:"cols"`
-	Rows uint16 `json:"rows"`
-	On   bool   `json:"on"`
+	Type  string `json:"type"`
+	Cols  uint16 `json:"cols"`
+	Rows  uint16 `json:"rows"`
+	Data  string `json:"data"`
+	Final bool   `json:"final"`
+	On    bool   `json:"on"`
 }
 
 // HandleSession handles a WebSocket connection for an entire tmux session via PTY.
@@ -94,7 +99,19 @@ func (h *PTYTerminalHandler) HandleSession(w http.ResponseWriter, r *http.Reques
 	}
 	defer ptySess.Close()
 
+	var writeMu sync.Mutex
+	var images clipboardimage.Receiver
 	hold := newVoiceHold(ptySess)
+	sendResult := func(err error) {
+		message := ""
+		if err != nil {
+			message = err.Error()
+		}
+		data, _ := json.Marshal(map[string]string{"type": "image-result", "error": message})
+		writeMu.Lock()
+		defer writeMu.Unlock()
+		_ = conn.WriteMessage(websocket.TextMessage, data)
+	}
 
 	// Read goroutine: PTY → WebSocket (binary messages)
 	done := make(chan struct{})
@@ -110,7 +127,10 @@ func (h *PTYTerminalHandler) HandleSession(w http.ResponseWriter, r *http.Reques
 			if h.activityTracker != nil {
 				h.activityTracker.Record(sessionName, n)
 			}
-			if err := conn.WriteMessage(websocket.BinaryMessage, buf[:n]); err != nil {
+			writeMu.Lock()
+			err = conn.WriteMessage(websocket.BinaryMessage, buf[:n])
+			writeMu.Unlock()
+			if err != nil {
 				return
 			}
 		}
@@ -134,6 +154,15 @@ func (h *PTYTerminalHandler) HandleSession(w http.ResponseWriter, r *http.Reques
 				log.WithError(err).Debug("invalid control message")
 				continue
 			}
+			if msg.Type == "image" {
+				path, err := images.Add(msg.Data, msg.Final)
+				if err == nil && path != "" {
+					_, err = ptySess.Write([]byte("\x1b[200~" + path + "\x1b[201~"))
+				}
+				if err != nil || path != "" {
+					sendResult(err)
+				}
+			}
 			if msg.Type == "voice-hold" {
 				if msg.On {
 					hold.Start()
@@ -156,6 +185,7 @@ func (h *PTYTerminalHandler) HandleSession(w http.ResponseWriter, r *http.Reques
 	}
 
 	hold.Stop()
+	ptySess.Close()
 	<-done
 	log.Info("session ws client disconnected")
 }

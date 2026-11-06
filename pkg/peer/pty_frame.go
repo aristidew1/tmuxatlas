@@ -82,6 +82,8 @@ type PTYControlFrame struct {
 	Cols     uint16 `json:"cols,omitempty"`
 	Rows     uint16 `json:"rows,omitempty"`
 	Reason   string `json:"reason,omitempty"`
+	Data     string `json:"data,omitempty"`
+	Final    bool   `json:"final,omitempty"`
 }
 
 func EncodePTYControlFrame(frame PTYControlFrame) ([]byte, error) {
@@ -115,15 +117,26 @@ func (frame PTYControlFrame) Validate() error {
 		return errors.New("PTY control sequence must be positive")
 	}
 	switch frame.Type {
+	case "image":
+		if frame.Cols != 0 || frame.Rows != 0 || frame.Reason != "" || len(frame.Data) > 32768 {
+			return errors.New("invalid image control frame")
+		}
 	case "resize":
+		if frame.Data != "" || frame.Final {
+			return errors.New("invalid resize data")
+		}
 		if frame.Cols == 0 || frame.Rows == 0 {
 			return errors.New("PTY resize dimensions must be positive")
 		}
 		if frame.Reason != "" {
 			return errors.New("PTY resize cannot contain reason")
 		}
+	case "image-result":
+		if frame.Cols != 0 || frame.Rows != 0 || frame.Data != "" || frame.Final || len(frame.Reason) > maxPTYReason {
+			return errors.New("invalid image result")
+		}
 	case "close", "error":
-		if frame.Cols != 0 || frame.Rows != 0 || len(frame.Reason) > maxPTYReason {
+		if frame.Cols != 0 || frame.Rows != 0 || len(frame.Reason) > maxPTYReason || frame.Data != "" || frame.Final {
 			return errors.New("invalid PTY close/error control frame")
 		}
 	default:

@@ -1,9 +1,14 @@
 package peer
 
 import (
+	"bytes"
+	"encoding/base64"
+	"image"
+	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -50,6 +55,7 @@ func (device *fakePTYDevice) Close() {
 }
 
 func TestAgentPTYRelayAppliesResizeAndInputToBoundDevice(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	attached := make(chan *websocket.Conn, 1)
 	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
@@ -119,6 +125,33 @@ func TestAgentPTYRelayAppliesResizeAndInputToBoundDevice(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("remote input did not reach PTY")
+	}
+
+	var imageData bytes.Buffer
+	if err := png.Encode(&imageData, image.NewRGBA(image.Rect(0, 0, 1, 1))); err != nil {
+		t.Fatal(err)
+	}
+	imageControl, _ := EncodePTYControlFrame(PTYControlFrame{Version: PTYFrameVersion, Type: "image", Sequence: 2, Data: base64.StdEncoding.EncodeToString(imageData.Bytes()), Final: true})
+	if err := hubConn.WriteMessage(websocket.TextMessage, imageControl); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case data := <-device.input:
+		path := strings.TrimSuffix(strings.TrimPrefix(string(data), "\x1b[200~"), "\x1b[201~")
+		saved, err := os.ReadFile(path)
+		if err != nil || !bytes.Equal(saved, imageData.Bytes()) {
+			t.Fatalf("saved image: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("image did not reach remote PTY")
+	}
+	_, resultData, err := hubConn.ReadMessage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := DecodePTYControlFrame(resultData)
+	if err != nil || result.Type != "image-result" || result.Reason != "" {
+		t.Fatalf("image result: %#v %v", result, err)
 	}
 	_ = hubConn.Close()
 	select {

@@ -131,6 +131,7 @@ export function Terminal({
     sendCommand,
     copySelection,
     pasteClipboard,
+    imagePasteStatus,
     commitClipboardPaste,
     selectAll,
     searchState,
@@ -530,6 +531,9 @@ export function Terminal({
               )}
             </div>
           </div>
+        )}
+        {imagePasteStatus && (
+          <div role="status" className="px-3 py-2 text-sm">{imagePasteStatus}</div>
         )}
         {pendingPaste && (
           <TerminalPasteConfirmation

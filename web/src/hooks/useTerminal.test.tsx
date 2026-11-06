@@ -221,6 +221,36 @@ beforeEach(() => {
 })
 
 describe('useTerminal lifecycle and guarded input', () => {
+  it('leaves clipboard shortcuts to the browser instead of sending Ctrl-V to the PTY', async () => {
+    const { result, unmount } = renderHook(() => useTerminal('work', 'host-a'))
+    act(() => { result.current.connect(terminalContainer()); FakeWebSocket.sockets[0].open() })
+    const handle = xtermState.terminals[0].customKeyHandler!
+    for (const options of [{ ctrlKey: true }, { ctrlKey: true, shiftKey: true }, { metaKey: true }]) {
+      const event = new KeyboardEvent('keydown', { key: 'v', cancelable: true, ...options })
+      expect(handle(event)).toBe(false)
+      expect(event.defaultPrevented).toBe(false)
+    }
+    expect(handle(new KeyboardEvent('keydown', { key: 'v', ctrlKey: true, altKey: true }))).toBe(true)
+    await act(async () => { await Promise.resolve() })
+    unmount()
+  })
+
+  it('sends a pasted clipboard image and reports the server result', async () => {
+    const { result } = renderHook(() => useTerminal('work', 'host-a'))
+    const container = terminalContainer()
+    act(() => { result.current.connect(container); FakeWebSocket.sockets[0].open() })
+    const socket = FakeWebSocket.sockets[0]
+    socket.send.mockClear()
+    const blob = { size: 3, arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer }
+    const event = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'clipboardData', { value: { items: [{ type: 'image/png', getAsFile: () => blob }] } })
+    await act(async () => { container.dispatchEvent(event); await Promise.resolve() })
+    expect(event.defaultPrevented).toBe(true)
+    expect(socket.send).toHaveBeenCalledWith(JSON.stringify({ type: 'image', data: 'AQID', final: true }))
+    act(() => socket.message(JSON.stringify({ type: 'image-result', error: '' })))
+    expect(result.current.imagePasteStatus).toBe('Image pasted into Terminal.')
+  })
+
   it('synchronizes a deferred fit when the socket becomes writable', () => {
     const { result } = renderHook(() => useTerminal('work', 'host-a'))
     act(() => result.current.connect(terminalContainer()))

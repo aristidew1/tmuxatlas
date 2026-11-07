@@ -793,7 +793,7 @@ function AppInner({
         <div className={showingTerminal ? 'hidden md:block' : ''}>
           <TopBar
             currentView={currentView}
-            sidebarCollapsed={sidebarCollapsed}
+            sidebarHidden={sidebarCollapsed && prefs.sidebar.collapse_mode === 'hidden'}
             role={role}
             authMode={authMode}
             username={username}
@@ -824,6 +824,7 @@ function AppInner({
             selectedSession={selectedSession}
             collapsed={sidebarCollapsed}
             collapseMode={(prefs.sidebar.collapse_mode || 'small') as 'small' | 'hidden'}
+            onToggleCollapse={() => setSidebarCollapsed(c => !c)}
             recentTargets={workspacePreferences.recent}
             onSessionSelect={handleSessionSelect}
             onDetachSession={detachBrowserSession}

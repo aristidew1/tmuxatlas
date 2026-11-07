@@ -5,7 +5,7 @@ import { parseSessionKey, type Session } from '../hooks/useSessions'
 import type { WorkspaceSession, WorkspaceStatus, WorkspaceViewModel } from '../workspace/model'
 import { filterWorkspaceSessions, isAttentionStatus, workspaceStatusLabel } from '../workspace/model'
 import { Button, Dialog, StatusIcon } from './ui'
-import { Search, ChevronDown, ChevronRight, Pencil, Unplug, Trash2 } from 'lucide-react'
+import { Search, ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, Pencil, Unplug, Trash2 } from 'lucide-react'
 import { resolveOwnerName } from '../lib/accountsApi'
 import { OwnerPicker } from './OwnerPicker'
 import { useHostLabel } from '../lib/hostLabel'
@@ -16,6 +16,7 @@ interface SidebarProps {
   selectedSession: string | null
   collapsed: boolean
   collapseMode: 'small' | 'hidden'
+  onToggleCollapse?: () => void
   recentTargets: string[]
   onSessionSelect: (session: Session) => void
   onDetachSession: (target: string) => void
@@ -82,6 +83,7 @@ export function Sidebar({
   selectedSession,
   collapsed,
   collapseMode,
+  onToggleCollapse,
   onSessionSelect,
   onDetachSession,
   canKillSession = false,
@@ -512,6 +514,21 @@ export function Sidebar({
             </ul>
           )}
         </nav>
+
+        {onToggleCollapse && !isHidden && (
+          <div className={cn('hidden shrink-0 border-t border-sidebar-border p-2 lg:flex', collapsed && 'justify-center')}>
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              aria-label={collapsed ? 'Déplier la barre latérale' : 'Replier la barre latérale'}
+              title={collapsed ? 'Déplier la barre latérale' : 'Replier la barre latérale'}
+              className="ui-focus-ring flex min-h-8 min-w-8 items-center justify-center gap-2 rounded px-2 text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            >
+              {collapsed ? <PanelLeftOpen size={16} aria-hidden="true" /> : <PanelLeftClose size={16} aria-hidden="true" />}
+              {!collapsed && <span>Replier</span>}
+            </button>
+          </div>
+        )}
 
         {contextMenu && (
           <div

@@ -276,7 +276,7 @@ describe('Vue non-admin : claim, release, erreur 409 et absence de routes interd
       <>
         <TopBar
           currentView="overview"
-          sidebarCollapsed={false}
+          sidebarHidden={false}
           role="user"
           authMode="accounts"
           onToggleCollapse={vi.fn()}

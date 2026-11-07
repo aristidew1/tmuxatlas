@@ -56,6 +56,20 @@ describe('state-driven Sidebar', () => {
   beforeEach(() => vi.clearAllMocks())
   afterEach(cleanup)
 
+  it('porte le bouton pour replier et déplier, sauf quand elle est masquée', () => {
+    const onToggleCollapse = vi.fn()
+    const { props, rerender } = renderSidebar({ onToggleCollapse })
+    fireEvent.click(screen.getByRole('button', { name: 'Replier la barre latérale' }))
+    expect(onToggleCollapse).toHaveBeenCalledTimes(1)
+
+    rerender(<Sidebar {...props} collapsed />)
+    fireEvent.click(screen.getByRole('button', { name: 'Déplier la barre latérale' }))
+    expect(onToggleCollapse).toHaveBeenCalledTimes(2)
+
+    rerender(<Sidebar {...props} collapsed collapseMode="hidden" />)
+    expect(screen.queryByRole('button', { name: 'Déplier la barre latérale' })).not.toBeInTheDocument()
+  })
+
   it('keeps same-name Sessions on different stable Hosts as separate entries', () => {
     renderSidebar()
     const sessionButtons = screen.getAllByRole('button', { name: /Ouvrir la session work sur Duplicate Host/ })

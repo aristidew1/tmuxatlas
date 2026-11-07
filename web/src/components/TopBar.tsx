@@ -9,7 +9,8 @@ import { Kbd, Menu, StatusIcon } from './ui'
 
 interface TopBarProps {
   currentView: string
-  sidebarCollapsed: boolean
+  /** True when the desktop Sidebar has no width left to hold its own toggle. */
+  sidebarHidden: boolean
   role?: AccountRole | null
   authMode?: AuthMode
   username?: string | null
@@ -41,7 +42,7 @@ function relativeTime(timestamp: string) {
 
 export function TopBar({
   currentView,
-  sidebarCollapsed,
+  sidebarHidden,
   role,
   authMode,
   onToggleCollapse,
@@ -97,7 +98,7 @@ export function TopBar({
     : actionable.length
       ? 'text-warning'
       : 'text-muted-foreground'
-  const collapseLabel = sidebarCollapsed ? 'Déplier la barre latérale' : 'Replier la barre latérale'
+  const openSidebarLabel = 'Afficher la barre latérale'
 
   return (
     <header className="flex min-h-12 shrink-0 items-center gap-1 border-b border-border bg-card px-2 pt-[var(--safe-area-inset-top)] font-sans text-sm md:gap-3 md:px-4">
@@ -134,12 +135,13 @@ export function TopBar({
         >
           <Plus size={16} aria-hidden />
         </button>
+        {/* The Sidebar holds this toggle on desktop; it is only needed here where the Sidebar is off-screen. */}
         <button
           type="button"
-          className={button}
+          className={`${button} ${sidebarHidden ? '' : 'lg:hidden'}`}
           onClick={onToggleCollapse}
-          title={collapseLabel}
-          aria-label={collapseLabel}
+          title={openSidebarLabel}
+          aria-label={openSidebarLabel}
         >
           <PanelLeft size={16} aria-hidden />
         </button>

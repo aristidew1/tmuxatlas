@@ -180,3 +180,14 @@ export function workspaceStatusLabel(status: WorkspaceStatus): string {
     offline: 'Hors ligne',
   }[status]
 }
+
+/** The same workspace limited to the sessions a given account owns. */
+export function workspaceOwnedBy(workspace: WorkspaceViewModel, username: string): WorkspaceViewModel {
+  const owned = (session: WorkspaceSession) => session.ownerName === username
+  return {
+    ...workspace,
+    sessions: workspace.sessions.filter(owned),
+    byTarget: new Map([...workspace.byTarget].filter(([, session]) => owned(session))),
+    hosts: workspace.hosts.map(host => ({ ...host, sessions: host.sessions.filter(owned) })),
+  }
+}

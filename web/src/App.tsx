@@ -34,7 +34,7 @@ import {
   type CommandId,
   type CommandScope,
 } from './commands/registry'
-import { buildWorkspaceViewModel } from './workspace/model'
+import { buildWorkspaceViewModel, workspaceOwnedBy } from './workspace/model'
 import { useWorkspacePreferences } from './workspace/preferences'
 
 function errorMessage(err: unknown): string {
@@ -245,6 +245,12 @@ function AppInner({
     () => buildWorkspaceViewModel(sessions, allToolEvents, activity, hosts, resolveOwner),
     [sessions, allToolEvents, activity, hosts, resolveOwner],
   )
+  // The Wall only holds the account's own sessions. Wait for the owner names:
+  // an empty list would make the Wall forget its saved tiles.
+  const wallWorkspace = useMemo(() => {
+    if (!role || !username) return workspace
+    return usersById.size > 0 ? workspaceOwnedBy(workspace, username) : null
+  }, [role, username, usersById, workspace])
 
   useEffect(() => {
     const metadata = applicationState.projection.metadata?.server as { version?: string } | undefined
@@ -872,7 +878,9 @@ function AppInner({
             ) : currentView === 'monitoring' ? (
               <MonitoringPage hosts={hosts} />
             ) : currentView === 'wall' ? (
-              <WallView workspace={workspace} onOpenSession={(key: string) => void jumpToSession(key)} />
+              wallWorkspace && (
+                <WallView workspace={wallWorkspace} onOpenSession={(key: string) => void jumpToSession(key)} />
+              )
             ) : selectedSession && (role !== 'user' || activeSession || selectedSession === pendingSessionRef.current) ? (
               <div ref={terminalContainerRef} className="flex-1 flex flex-col overflow-hidden">
                 <Terminal

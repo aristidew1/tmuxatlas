@@ -24,11 +24,41 @@ func TestClassifyClaude(t *testing.T) {
 			rule, "❯ Fais ca, com", rule,
 			"  ⏵⏵ auto mode on (shift+tab to cycle)",
 		}, ScreenWorking, false},
-		{"finished with background shells", []string{
+		// Claude ends its turn, and fires Stop, while the work it started goes on.
+		{"turn over with background shells running", []string{
 			"● La passe de reprise est lancée sur les 8 zones.",
 			"✻ Crunched for 4s · done 2:22 AM · 4 shells still running",
 			rule, "❯ ", rule,
 			"  ⏵⏵ auto mode on · 4 shells · ↓ to manage",
+		}, ScreenWorking, false},
+		{"turn over with a background agent running", []string{
+			"  confirmer qu'il a répondu « OK ». Je le signalerai dès qu'il aura rendu son résultat.",
+			"✻ Churned for 2s · done 12:22 PM",
+			rule, "❯", rule,
+			"  ⏵⏵ auto mode on (shift+tab to cycle) · ↓ to manage",
+			"  ● main",
+			"  ◯ general-purpose  Attente de 45 secondes                                  53s",
+		}, ScreenWorking, false},
+		{"usage limit with automatic continue", []string{
+			"  ⎿  You've hit your 5-hour limit · resets 12:20pm (Europe/Berlin)",
+			"● Usage limit reached · continuing automatically at 12:20pm · esc to cancel",
+			"✻ Baked for 30m 1s · done 11:57 AM",
+			rule, "❯ ", rule,
+			"  ⚠ Usage limit reached · limit resets 12:20pm",
+			"    Continuing automatically at 12:20pm · Esc to cancel · /usage-credits to continue now",
+			"  ⏵⏵ auto mode on (shift+tab to cycle)",
+		}, ScreenWorking, false},
+		{"background work over", []string{
+			"  Les deux tâches sont donc terminées : le sous-agent et la commande sleep 40.",
+			"✻ Waiting for 1 background agent to finish",
+			"● Agent \"Attente de 45 secondes\" finished · 54s",
+			rule, "❯", rule,
+			"  ⏵⏵ auto mode on (shift+tab to cycle)",
+		}, ScreenReady, true},
+		{"a prompt quoting the footer is not background work", []string{
+			"● Done.",
+			rule, "❯ pourquoi le pied de page dit · 2 shells · ↓ to manage ?", rule,
+			"  ⏵⏵ auto mode on (shift+tab to cycle)",
 		}, ScreenReady, true},
 		{"answer ending with an ellipsis is not a spinner", []string{
 			"● Je regarde ça…",

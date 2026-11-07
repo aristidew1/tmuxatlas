@@ -228,3 +228,45 @@ func TestTrackerOnlyBroadcastsChanges(t *testing.T) {
 		t.Fatal("waiting since was reset")
 	}
 }
+
+// Stop fires at the end of each turn of Claude's main loop, even while shells or
+// agents it started are still running. That is not a finished task.
+func TestHookCompletionWithBackgroundWorkStaysActive(t *testing.T) {
+	f := newWatcherFixture()
+	f.screen = "✻ Brewed for 19s · done 12:22 PM · 2 shells still running\n" + rule + "\n❯ \n" + rule +
+		"\n  ⏵⏵ auto mode on · 2 shells · ↓ to manage\n"
+	f.tick(t)
+	heard := f.tracker.Subscribe()
+	defer f.tracker.Unsubscribe(heard)
+
+	f.tracker.Record(&Event{Tool: ToolClaude, Status: StatusCompleted, Host: "host", Session: "work", Pane: "%1"})
+	if got := f.status(t); got != StatusActive {
+		t.Fatalf("Stop with background work: %q", got)
+	}
+
+	f.screen = readyScreen
+	f.now = f.now.Add(hookGrace)
+	f.tick(t)
+	f.tick(t)
+	if got := f.status(t); got != StatusCompleted {
+		t.Fatalf("background work over: %q", got)
+	}
+	completed := 0
+	for len(heard) > 0 {
+		if (<-heard).Status == StatusCompleted {
+			completed++
+		}
+	}
+	if completed != 1 {
+		t.Fatalf("completions announced: %d, want 1", completed)
+	}
+}
+
+func TestHookCompletionWithoutBackgroundWorkIsKept(t *testing.T) {
+	f := newWatcherFixture()
+	f.screen = readyScreen
+	f.tracker.Record(&Event{Tool: ToolClaude, Status: StatusCompleted, Host: "host", Session: "work", Pane: "%1"})
+	if got := f.status(t); got != StatusCompleted {
+		t.Fatalf("finished turn: %q", got)
+	}
+}

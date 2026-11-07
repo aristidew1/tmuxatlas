@@ -29,6 +29,9 @@ type Observation struct {
 	Finished bool
 	// Message is the question being asked, when State is ScreenWaiting.
 	Message string
+	// Background is true when the agent's turn is over but work it started goes
+	// on: background shells or agents, or a turn that resumes after a usage limit.
+	Background bool
 }
 
 const (
@@ -51,8 +54,12 @@ var (
 	claudeDialog = regexp.MustCompile(`(?i)\besc to cancel\b|\benter to (select|confirm|submit)\b|\bdo you want to\b|\bwould you like to\b`)
 
 	interruptHint = regexp.MustCompile(`(?i)\besc to interrupt\b`)
-	codexAnswer   = regexp.MustCompile(`^\s*•\s|\bWorked for\b`)
-	codexDialog   = regexp.MustCompile(`(?i)\bpress enter to (confirm|submit|continue)\b|\benter to (confirm|submit|select)\b|\bwould you like to (run|make|allow|grant|apply)\b`)
+	// Shown below Claude's input box while work outlives the turn: "· 2 shells ·",
+	// "3 active agents", the "↓ to manage" hint over the agent list, and
+	// "Continuing automatically at 12:20pm" after a usage limit.
+	claudeBackground = regexp.MustCompile(`\b\d+\s+(?:active\s+)?(?:shells?|agents?|monitors?)\b|↓ to manage\b|\bContinuing (?:automatically|shortly)\b`)
+	codexAnswer      = regexp.MustCompile(`^\s*•\s|\bWorked for\b`)
+	codexDialog      = regexp.MustCompile(`(?i)\bpress enter to (confirm|submit|continue)\b|\benter to (confirm|submit|select)\b|\bwould you like to (run|make|allow|grant|apply)\b`)
 )
 
 // ClassifyScreen reads a capture of an agent's pane. silent is how long the
@@ -96,6 +103,18 @@ func classifyClaude(content string, lines []string) Observation {
 		if interruptHint.MatchString(line) {
 			return Observation{State: ScreenWorking}
 		}
+	}
+	// Below the rule that closes the input box, so that the prompt's own text is not read.
+	for i := box + 1; i < len(lines); i++ {
+		if !screenRule.MatchString(lines[i]) {
+			continue
+		}
+		for _, line := range lines[i+1:] {
+			if claudeBackground.MatchString(line) {
+				return Observation{State: ScreenWorking, Background: true}
+			}
+		}
+		break
 	}
 	return Observation{State: ScreenReady, Finished: anyLine(content, claudeAnswer)}
 }

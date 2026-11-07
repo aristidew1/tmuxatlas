@@ -63,6 +63,9 @@ type Tracker struct {
 	// Subscribers
 	subMu       sync.RWMutex
 	subscribers []chan *Event
+
+	// review may correct a hook's event before it is stored and announced.
+	review func(*Event)
 }
 
 // NewTracker creates a new tool event tracker
@@ -77,6 +80,9 @@ func NewTracker() *Tracker {
 // subscribers only hear about real transitions.
 func (t *Tracker) Record(evt *Event) {
 	evt.Timestamp = time.Now()
+	if t.review != nil && !evt.AutoDetected && !evt.Removed {
+		t.review(evt)
+	}
 
 	log := logrus.WithFields(logrus.Fields{
 		"tool":          evt.Tool,

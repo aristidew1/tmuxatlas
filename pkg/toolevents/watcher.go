@@ -74,7 +74,7 @@ type Watcher struct {
 
 // NewWatcher creates a Watcher.
 func NewWatcher(tracker *Tracker, list PaneLister, capture PaneCapturer, interval time.Duration) *Watcher {
-	return &Watcher{
+	w := &Watcher{
 		tracker:  tracker,
 		list:     list,
 		capture:  capture,
@@ -83,6 +83,28 @@ func NewWatcher(tracker *Tracker, list PaneLister, capture PaneCapturer, interva
 		now:      time.Now,
 		detect:   DetectAgentInProcessTree,
 		agents:   make(map[string]*watchedAgent),
+	}
+	tracker.review = w.reviewHook
+	return w
+}
+
+// reviewHook reads the screen behind a hook's "completed". Claude fires Stop at
+// the end of each turn of its main loop, also while shells or agents it started
+// keep running; announcing that as finished would notify on every turn.
+func (w *Watcher) reviewHook(evt *Event) {
+	if evt.Status != StatusCompleted || evt.Tool != ToolClaude || evt.Pane == "" {
+		return
+	}
+	if evt.Host != "" && w.hostID != "" && evt.Host != w.hostID {
+		return // another host's pane: this host cannot read it
+	}
+	content, err := w.capture(evt.Pane)
+	if err != nil {
+		return
+	}
+	if ClassifyScreen(evt.Tool, content, 0).Background {
+		evt.Status = StatusActive
+		evt.Message = "Travail en arrière-plan"
 	}
 }
 

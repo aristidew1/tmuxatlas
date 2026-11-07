@@ -10,7 +10,7 @@ Every agent pane has exactly one status, kept until it changes:
 |--------|---------|----------|
 | `active` | The agent is producing its answer | En cours |
 | `waiting` | The agent is blocked on a question or an approval | En attente |
-| `completed` | The agent finished its turn and sits at its prompt | Terminé |
+| `completed` | The agent finished its work and sits at its prompt | Terminé |
 | `idle` | The agent is open but has not been given any work | Inactif |
 | `error` | A hook reported an error; kept until the agent works again | Erreur |
 
@@ -36,7 +36,7 @@ Hooks are the fastest signal. The watcher corrects what they cannot report, such
 - `PostToolUse` → `active` ("Working")
 - `Notification` (permission_prompt) → `waiting` ("Permission needed")
 - `Notification` (elicitation_dialog) → `waiting` ("Needs input")
-- `Stop` → `completed` ("Task complete")
+- `Stop` → `completed` ("Task complete"), or `active` ("Travail en arrière-plan") when the screen shows background work
 
 **Waiting detection:** Hooks, confirmed by the dialog on screen. The screen also clears the status as soon as the dialog closes, and catches question dialogs that send no notification.
 
@@ -105,7 +105,7 @@ Repeating the current status is ignored: "waiting since" keeps its original time
 
 On each cycle the watcher lists all panes and, for each one running an agent (foreground command or process tree), captures the screen and classifies it (`pkg/toolevents/screen.go`):
 
-- **Claude Code:** the input box is the anchor. With it, a spinner line above means working, otherwise ready. Without it, a menu or dialog footer means waiting. The conversation above is not trusted, since it may quote any of these strings.
+- **Claude Code:** the input box is the anchor. With it, a spinner line above means working, otherwise ready. Below the rule that closes the box, background shells or agents (`· 2 shells ·`, `3 active agents`, `↓ to manage`) or an automatic continue after a usage limit (`Continuing automatically`) mean working: Claude ends its turn, and fires `Stop`, while that work goes on. Without it, a menu or dialog footer means waiting. The conversation above is not trusted, since it may quote any of these strings.
 - **Codex:** `esc to interrupt` means working, an approval prompt without composer means waiting, the `›` composer means ready.
 - **Other tools:** their hooks decide when they have any. Otherwise recent output means working, and silence means waiting if a prompt is visible, ready if not.
 

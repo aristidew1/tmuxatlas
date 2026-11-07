@@ -7,17 +7,28 @@ import { IconButton, StatusIcon } from './ui'
 import { Terminal } from './Terminal'
 
 const storageKey = 'wall-targets:v1'
+type WallSession = WorkspaceViewModel['sessions'][number]
+
+/**
+ * Up to four live sessions side by side. Until the account chooses its tiles,
+ * the Wall suggests its own sessions; any session can then be added.
+ */
 export function WallView({
   workspace,
+  owner,
   onOpenSession,
 }: {
   workspace: WorkspaceViewModel
+  /** The signed-in account; without one, every session counts as its own. */
+  owner?: string | null
   onOpenSession: (key: string) => void
 }) {
   const hostLabel = useHostLabel()
   const needsSuggestions = useRef(false)
+  const isOwn = (session: WallSession) => !owner || session.ownerName === owner
+  const ownSessions = workspace.sessions.filter(isOwn)
   const suggestions = () =>
-    [...workspace.sessions]
+    [...ownSessions]
       .sort(
         (a, b) =>
           Number(isAttentionStatus(b.status)) - Number(isAttentionStatus(a.status)) ||
@@ -37,15 +48,15 @@ export function WallView({
     } catch {
       /* Stockage indisponible. */
     }
-    needsSuggestions.current = workspace.sessions.length === 0
+    needsSuggestions.current = ownSessions.length === 0
     return suggestions()
   })
   const [active, setActive] = useState<string | null>(null)
   useEffect(() => {
-    if (!needsSuggestions.current || workspace.sessions.length === 0) return
+    if (!needsSuggestions.current || ownSessions.length === 0) return
     needsSuggestions.current = false
     setTargets(suggestions())
-  }, [workspace.sessions])
+  }, [workspace.sessions, owner])
   useEffect(() => {
     setTargets(previous => {
       const next = previous.filter(key => !key || workspace.byTarget.has(key))
@@ -61,13 +72,27 @@ export function WallView({
     }
   }, [targets])
   const available = workspace.sessions.filter(session => !targets.includes(session.key))
+  const availableOwn = available.filter(isOwn)
+  const availableOthers = available.filter(session => !isOwn(session))
   const multipleHosts = new Set(workspace.sessions.map(session => session.hostId)).size > 1
-  const label = (session: (typeof workspace.sessions)[number]) =>
+  const name = (session: WallSession) =>
     multipleHosts
       ? `${hostLabel(session.hostId, session.hostName === session.hostId ? 'Hôte' : session.hostName || 'Hôte')} / ${session.name}`
       : session.name
+  const label = (session: WallSession) =>
+    isOwn(session) ? name(session) : `${name(session)} · ${session.ownerName || 'sans propriétaire'}`
+  const option = (session: WallSession) => (
+    <option key={session.key} value={session.key}>
+      {label(session)}
+    </option>
+  )
+  const choose = (update: (previous: string[]) => string[]) => {
+    // A choice ends the suggestions, so it is saved even before the account owns a session.
+    needsSuggestions.current = false
+    setTargets(update)
+  }
   const select = (index: number, key: string) =>
-    setTargets(previous => {
+    choose(previous => {
       const next = [...previous]
       if (index === next.length) next.push(key)
       else next[index] = key
@@ -78,7 +103,7 @@ export function WallView({
       <header className="flex items-center justify-between">
         <h1 className="text-2xl">Mur</h1>
         {targets.length < 4 && available.length > 0 && (
-          <IconButton aria-label="Ajouter une tuile" onClick={() => setTargets(previous => [...previous, ''])}>
+          <IconButton aria-label="Ajouter une tuile" onClick={() => choose(previous => [...previous, ''])}>
             <Plus size={16} />
           </IconButton>
         )}
@@ -121,11 +146,16 @@ export function WallView({
                         Choisir une session
                       </option>
                       {session && <option value={key}>{label(session)}</option>}
-                      {available.map(item => (
-                        <option key={item.key} value={item.key}>
-                          {label(item)}
-                        </option>
-                      ))}
+                      {availableOthers.length > 0 && owner ? (
+                        <>
+                          {availableOwn.length > 0 && (
+                            <optgroup label="Mes sessions">{availableOwn.map(option)}</optgroup>
+                          )}
+                          <optgroup label="Autres propriétaires">{availableOthers.map(option)}</optgroup>
+                        </>
+                      ) : (
+                        available.map(option)
+                      )}
                     </select>
                     <ChevronDown size={16} aria-hidden="true" className="pointer-events-none absolute right-0" />
                   </div>
@@ -137,7 +167,7 @@ export function WallView({
                   <IconButton
                     aria-label="Retirer"
                     size="sm"
-                    onClick={() => setTargets(previous => previous.filter((_, i) => i !== index))}
+                    onClick={() => choose(previous => previous.filter((_, i) => i !== index))}
                   >
                     <X size={16} />
                   </IconButton>

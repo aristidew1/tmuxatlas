@@ -34,7 +34,7 @@ import {
   type CommandId,
   type CommandScope,
 } from './commands/registry'
-import { buildWorkspaceViewModel, toolEventStatusLabel, workspaceOwnedBy } from './workspace/model'
+import { buildWorkspaceViewModel, toolEventStatusLabel } from './workspace/model'
 import { useWorkspacePreferences } from './workspace/preferences'
 
 function errorMessage(err: unknown): string {
@@ -245,12 +245,9 @@ function AppInner({
     () => buildWorkspaceViewModel(sessions, allToolEvents, activity, hosts, resolveOwner),
     [sessions, allToolEvents, activity, hosts, resolveOwner],
   )
-  // The Wall only holds the account's own sessions. Wait for the owner names:
-  // an empty list would make the Wall forget its saved tiles.
-  const wallWorkspace = useMemo(() => {
-    if (!role || !username) return workspace
-    return usersById.size > 0 ? workspaceOwnedBy(workspace, username) : null
-  }, [role, username, usersById, workspace])
+  // The Wall suggests the account's own sessions. Wait for the owner names, or it
+  // would take every session for someone else's and suggest none.
+  const wallReady = !role || !username || usersById.size > 0
 
   useEffect(() => {
     const metadata = applicationState.projection.metadata?.server as { version?: string } | undefined
@@ -877,8 +874,12 @@ function AppInner({
             ) : currentView === 'monitoring' ? (
               <MonitoringPage hosts={hosts} />
             ) : currentView === 'wall' ? (
-              wallWorkspace && (
-                <WallView workspace={wallWorkspace} onOpenSession={(key: string) => void jumpToSession(key)} />
+              wallReady && (
+                <WallView
+                  workspace={workspace}
+                  owner={role ? username : null}
+                  onOpenSession={(key: string) => void jumpToSession(key)}
+                />
               )
             ) : selectedSession && (role !== 'user' || activeSession || selectedSession === pendingSessionRef.current) ? (
               <div ref={terminalContainerRef} className="flex-1 flex flex-col overflow-hidden">

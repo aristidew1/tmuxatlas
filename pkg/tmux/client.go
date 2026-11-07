@@ -276,7 +276,7 @@ func (c *Client) ListPanes(target string) ([]*Pane, error) {
 // resolved by tmux (avoids extra ListSessions/ListWindows calls).
 func (c *Client) ListAllPanesDetailed() ([]*PaneDetailed, error) {
 	out, err := c.Exec("list-panes", "-a", "-F",
-		"#{pane_id}:#{session_name}:#{window_index}:#{pane_pid}")
+		"#{pane_id}:#{session_name}:#{window_index}:#{pane_pid}:#{pane_current_command}")
 	if err != nil {
 		if strings.Contains(err.Error(), "no server running") || strings.Contains(err.Error(), "no sessions") {
 			return nil, nil
@@ -289,17 +289,18 @@ func (c *Client) ListAllPanesDetailed() ([]*PaneDetailed, error) {
 		if line == "" {
 			continue
 		}
-		parts := strings.SplitN(line, ":", 4)
-		if len(parts) < 4 {
+		parts := strings.SplitN(line, ":", 5)
+		if len(parts) < 5 {
 			continue
 		}
 		winIdx, _ := strconv.Atoi(parts[2])
 		pid, _ := strconv.Atoi(parts[3])
 		panes = append(panes, &PaneDetailed{
-			ID:      parts[0],
-			Session: parts[1],
-			Window:  winIdx,
-			PID:     pid,
+			ID:             parts[0],
+			Session:        parts[1],
+			Window:         winIdx,
+			PID:            pid,
+			CurrentCommand: parts[4],
 		})
 	}
 	return panes, nil

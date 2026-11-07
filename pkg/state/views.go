@@ -126,7 +126,7 @@ func (p Projection) ToolEventViews() []*toolevents.Event {
 			Tool: toolevents.Tool(event.Tool), Status: toolevents.Status(event.Status),
 			Host: event.HostID, Session: event.Session, Window: window,
 			Pane: event.Pane, Message: event.Message, Timestamp: event.Timestamp,
-			AutoDetected: event.AutoDetected,
+			AutoDetected: event.AutoDetected, Baseline: event.Baseline,
 		})
 	}
 	return result

@@ -57,7 +57,24 @@ func TestProducerAdaptersCommitOrderedDeltas(t *testing.T) {
 		t.Fatal(err)
 	}
 	snapshot, _ = coordinator.Snapshot(ctx)
+	if len(snapshot.State.ToolEvents) != 1 {
+		t.Fatalf("completed event must stay in the projection: %+v", snapshot.State.ToolEvents)
+	}
+	if _, err := coordinator.ClearToolEvents(ctx, "", "", 0, ""); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, _ = coordinator.Snapshot(ctx)
+	if len(snapshot.State.ToolEvents) != 1 {
+		t.Fatal("clearing alerts must not erase a finished agent's status")
+	}
+
+	removed := *waiting
+	removed.Removed = true
+	if _, err := coordinator.ApplyToolEvent(ctx, &removed, "host-a"); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, _ = coordinator.Snapshot(ctx)
 	if len(snapshot.State.ToolEvents) != 0 {
-		t.Fatal("completed event did not clear canonical tool event")
+		t.Fatal("removed event did not clear canonical tool event")
 	}
 }

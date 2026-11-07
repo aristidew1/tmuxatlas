@@ -1,7 +1,6 @@
 package toolevents
 
 import (
-	"context"
 	"sync"
 	"time"
 
@@ -26,6 +25,7 @@ const (
 	StatusWaiting   Status = "waiting"   // agent needs user attention/approval
 	StatusCompleted Status = "completed" // agent finished its task
 	StatusError     Status = "error"     // agent encountered an error
+	StatusIdle      Status = "idle"      // agent is open but has not been given any work
 )
 
 // Event is a single notification from an agent hook
@@ -39,7 +39,12 @@ type Event struct {
 	Pane         string    `json:"pane,omitempty"`      // tmux pane ID (optional)
 	Message      string    `json:"message,omitempty"`   // human-readable detail
 	Timestamp    time.Time `json:"timestamp"`
-	AutoDetected bool      `json:"auto_detected,omitempty"` // true if detected via process tree (not hooks)
+	AutoDetected bool      `json:"auto_detected,omitempty"` // true if read from the terminal (not hooks)
+	// Baseline marks the first status observed for an agent, which describes a
+	// situation that already existed rather than a change worth a notification.
+	Baseline bool `json:"baseline,omitempty"`
+	// Removed means the agent is gone: the pane's status must be forgotten.
+	Removed bool `json:"removed,omitempty"`
 }
 
 // PaneKey uniquely identifies a tmux pane
@@ -50,22 +55,10 @@ type PaneKey struct {
 	Pane    string
 }
 
-// nativeWaitingTools is the set of tools that send explicit "waiting" events
-// via hooks. Tools not in this set will have inactivity-based and
-// silence-based waiting detection as fallbacks.
-var nativeWaitingTools = map[Tool]bool{
-	ToolClaude:   true,
-	ToolOpenCode: true,
-}
-
 // Tracker tracks the latest status of AI tools per tmux pane
 type Tracker struct {
 	mu     sync.RWMutex
 	events map[PaneKey]*Event
-
-	// lastActive tracks the most recent "active" event per pane for tools
-	// that lack native waiting detection. Used by the inactivity promoter.
-	lastActive map[PaneKey]*Event
 
 	// Subscribers
 	subMu       sync.RWMutex
@@ -75,12 +68,13 @@ type Tracker struct {
 // NewTracker creates a new tool event tracker
 func NewTracker() *Tracker {
 	return &Tracker{
-		events:     make(map[PaneKey]*Event),
-		lastActive: make(map[PaneKey]*Event),
+		events: make(map[PaneKey]*Event),
 	}
 }
 
-// Record stores a new event and broadcasts it to subscribers
+// Record stores a pane's status and broadcasts it when it changed. Repeating
+// the current status is a no-op: "waiting since" keeps its original time and
+// subscribers only hear about real transitions.
 func (t *Tracker) Record(evt *Event) {
 	evt.Timestamp = time.Now()
 
@@ -93,6 +87,7 @@ func (t *Tracker) Record(evt *Event) {
 		"host":          evt.Host,
 		"message":       evt.Message,
 		"auto_detected": evt.AutoDetected,
+		"removed":       evt.Removed,
 	})
 	log.Debug("recording tool event")
 
@@ -104,36 +99,19 @@ func (t *Tracker) Record(evt *Event) {
 	}
 
 	t.mu.Lock()
-	if evt.Status == StatusCompleted || evt.Status == StatusActive {
-		// Completed and active events clear the tracking — active is transient
-		// and only serves to signal that waiting/error state should be dismissed
-		_, existed := t.events[key]
+	previous, existed := t.events[key]
+	if evt.Removed {
 		delete(t.events, key)
-		log.WithFields(logrus.Fields{
-			"action": "clear", "had_existing": existed, "tracked_count": len(t.events),
-		}).Trace("tracker: cleared event (active/completed)")
-	} else {
-		t.events[key] = evt
-		log.WithField("tracked_count", len(t.events)).Trace("tracker: stored event (waiting/error)")
-	}
-
-	// Track last activity for tools without native waiting detection.
-	// The inactivity promoter uses this to generate synthetic "waiting"
-	// events when a tool goes quiet. Auto-detected events are excluded —
-	// only hook-based activity should trigger the inactivity timer,
-	// since we can't tell if an auto-detected agent is working or idle.
-	if !nativeWaitingTools[evt.Tool] && !evt.AutoDetected {
-		switch evt.Status {
-		case StatusActive:
-			t.lastActive[key] = evt
-			log.Trace("tracker: added to lastActive for inactivity promotion")
-		default:
-			// Any explicit waiting/error/completed clears the inactivity tracker
-			delete(t.lastActive, key)
-			log.Trace("tracker: cleared from lastActive")
+		if !existed {
+			t.mu.Unlock()
+			return
 		}
-	} else if evt.AutoDetected {
-		log.Trace("tracker: skipping lastActive (auto-detected)")
+	} else {
+		if existed && previous.Status == evt.Status && previous.Tool == evt.Tool {
+			t.mu.Unlock()
+			return
+		}
+		t.events[key] = evt
 	}
 	t.mu.Unlock()
 
@@ -152,41 +130,46 @@ func (t *Tracker) Record(evt *Event) {
 	log.WithField("subscribers", sent).Trace("tool event broadcast complete")
 }
 
-// StaleTimeout is how long an event can sit without an update before being
-// considered stale and automatically cleared. This is intentionally long
-// because agents like Claude can wait for user input indefinitely.
+// StaleTimeout is how long an event that names no pane is kept. Events tied to
+// a pane live as long as the agent in that pane.
 const StaleTimeout = 24 * time.Hour
 
-// GetAll returns all currently tracked (non-completed) events, pruning stale ones.
+// GetAll returns the current status of every tracked pane.
 func (t *Tracker) GetAll() []*Event {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 
-	now := time.Now()
 	events := make([]*Event, 0, len(t.events))
-	for key, evt := range t.events {
-		if now.Sub(evt.Timestamp) > StaleTimeout {
-			delete(t.events, key)
-			continue
-		}
+	for _, evt := range t.events {
 		events = append(events, evt)
 	}
 	return events
 }
 
-// Clear removes a specific event by session/window/pane
-// Clear removes a specific event by host/session/window/pane
+// IsDismissible reports whether a status is an alert a user can clear. Running,
+// finished and idle describe the agent and stay until it changes.
+func IsDismissible(status Status) bool {
+	return status == StatusWaiting || status == StatusError
+}
+
+// Clear dismisses the alert of a specific pane.
 func (t *Tracker) Clear(host, session string, window int, pane string) {
 	t.mu.Lock()
 	key := PaneKey{Host: host, Session: session, Window: window, Pane: pane}
-	delete(t.events, key)
+	if evt, ok := t.events[key]; ok && IsDismissible(evt.Status) {
+		delete(t.events, key)
+	}
 	t.mu.Unlock()
 }
 
-// ClearAll removes all tracked events
+// ClearAll dismisses every alert.
 func (t *Tracker) ClearAll() {
 	t.mu.Lock()
-	t.events = make(map[PaneKey]*Event)
+	for key, evt := range t.events {
+		if IsDismissible(evt.Status) {
+			delete(t.events, key)
+		}
+	}
 	t.mu.Unlock()
 }
 
@@ -223,74 +206,5 @@ func (t *Tracker) Unsubscribe(ch chan *Event) {
 			close(ch)
 			return
 		}
-	}
-}
-
-// DefaultInactivityTimeout is how long a non-native-waiting tool can be quiet
-// before the tracker promotes it to "waiting". This balances responsiveness
-// (catching idle agents quickly) with avoiding false positives during normal
-// tool use bursts.
-const DefaultInactivityTimeout = 30 * time.Second
-
-// RunInactivityPromoter starts a background goroutine that checks for tools
-// without native waiting support that have gone quiet. If a tool's last
-// "active" event is older than the timeout, a synthetic "waiting" event is
-// recorded. This only affects tools NOT in nativeWaitingTools (e.g. copilot,
-// codex, opencode) and never interferes with Claude's explicit waiting hooks.
-func (t *Tracker) RunInactivityPromoter(ctx context.Context, timeout time.Duration) {
-	log := logrus.WithField("component", "inactivity-promoter")
-	log.WithField("timeout", timeout).Info("starting inactivity promoter")
-
-	// Check at half the timeout interval for responsiveness
-	interval := timeout / 2
-	if interval < 5*time.Second {
-		interval = 5 * time.Second
-	}
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			log.Info("stopping inactivity promoter")
-			return
-		case <-ticker.C:
-			t.promoteInactive(timeout, log)
-		}
-	}
-}
-
-// promoteInactive checks lastActive entries and promotes stale ones to waiting.
-func (t *Tracker) promoteInactive(timeout time.Duration, log *logrus.Entry) {
-	now := time.Now()
-
-	t.mu.Lock()
-	var toPromote []*Event
-	for key, evt := range t.lastActive {
-		if now.Sub(evt.Timestamp) > timeout {
-			toPromote = append(toPromote, evt)
-			delete(t.lastActive, key)
-		}
-	}
-	t.mu.Unlock()
-
-	for _, evt := range toPromote {
-		log.WithFields(logrus.Fields{
-			"tool":    evt.Tool,
-			"session": evt.Session,
-			"window":  evt.Window,
-			"pane":    evt.Pane,
-		}).Debug("promoting inactive tool to waiting")
-
-		t.Record(&Event{
-			Tool:    evt.Tool,
-			Status:  StatusWaiting,
-			Host:    evt.Host,
-			Session: evt.Session,
-			Window:  evt.Window,
-			Pane:    evt.Pane,
-			Message: "May need attention",
-		})
 	}
 }

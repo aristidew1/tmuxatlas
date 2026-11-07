@@ -181,6 +181,7 @@ export function selectToolEvents(state: ApplicationState): ToolEvent[] {
       message: event.message,
       timestamp: event.timestamp,
       auto_detected: event.auto_detected,
+      baseline: event.baseline,
     }))
 }
 

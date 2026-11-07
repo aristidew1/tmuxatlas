@@ -433,6 +433,13 @@ func (c *Client) forwardToolEvents(ctx context.Context, conn *websocket.Conn) {
 	ch := c.toolTracker.Subscribe()
 	defer c.toolTracker.Unsubscribe(ch)
 
+	// The hub only hears about changes, so start it off with the current state.
+	for _, evt := range c.toolTracker.GetAll() {
+		if msg, err := NewMessage(MsgToolEvent, ToolEventPayload{Event: evt}); err == nil {
+			c.writeJSON(conn, msg)
+		}
+	}
+
 	for {
 		select {
 		case <-ctx.Done():

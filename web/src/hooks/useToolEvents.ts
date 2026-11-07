@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 
 export interface ToolEvent {
   tool: string
-  status: 'active' | 'waiting' | 'completed' | 'error'
+  status: 'active' | 'waiting' | 'completed' | 'error' | 'idle'
   host?: string
   host_name?: string
   session: string
@@ -11,6 +11,8 @@ export interface ToolEvent {
   message?: string
   timestamp: string
   auto_detected?: boolean
+  /** First status seen for an agent: an existing situation, not a change. */
+  baseline?: boolean
 }
 
 export function useToolEvents() {

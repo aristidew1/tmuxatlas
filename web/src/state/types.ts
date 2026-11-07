@@ -70,6 +70,7 @@ export interface ToolEventState {
   message?: string
   timestamp: string
   auto_detected?: boolean
+  baseline?: boolean
 }
 
 export interface ActivityState {

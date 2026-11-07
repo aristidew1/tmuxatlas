@@ -52,37 +52,7 @@ func ExecuteAgent(ctx context.Context, c *cli.Command) error {
 	discovery := tmux.NewDiscovery(client, interval, stateMgr.UpdateSessions)
 	go discovery.Run(ctx)
 
-	reconciler := toolevents.NewReconciler(tracker, func(paneID string) toolevents.PaneState {
-		panes, err := client.ListAllPanes()
-		if err != nil {
-			return toolevents.PaneState{}
-		}
-		for _, pane := range panes {
-			if pane.ID == paneID {
-				return toolevents.PaneState{Exists: true, CurrentCommand: pane.CurrentCommand, PID: pane.PID}
-			}
-		}
-		return toolevents.PaneState{}
-	}, 3*time.Second)
-	go reconciler.Run(ctx)
-
-	detector := toolevents.NewDetector(tracker, func() []toolevents.PaneInfo {
-		panes, err := client.ListAllPanesDetailed()
-		if err != nil {
-			return nil
-		}
-		infos := make([]toolevents.PaneInfo, 0, len(panes))
-		for _, pane := range panes {
-			infos = append(infos, toolevents.PaneInfo{
-				PaneID: pane.ID, Session: pane.Session, Window: pane.Window, PID: pane.PID,
-			})
-		}
-		return infos
-	}, 5*time.Second)
-	go detector.Run(ctx)
-
-	silenceMonitor := toolevents.NewSilenceMonitor(tracker, detector, client)
-	go silenceMonitor.Run(ctx)
+	watcher := toolevents.NewWatcher(tracker, agentPaneLister(client), client.CapturePaneContent, toolevents.DefaultWatchInterval)
 	if !c.Bool("no-control-mode") {
 		controlMode := tmux.NewControlMode(client, stateMgr.UpdateSessions,
 			tmux.WithOnConnect(func() { discovery.SetInterval(30 * time.Second) }),
@@ -91,12 +61,11 @@ func ExecuteAgent(ctx context.Context, c *cli.Command) error {
 				if session := stateMgr.SessionForPane(paneID); session != "" {
 					actTracker.Record(session, dataLen)
 				}
-				silenceMonitor.RecordOutput(paneID)
+				watcher.RecordOutput(paneID)
 			}),
 		)
 		go controlMode.Run(ctx)
 	}
-	go tracker.RunInactivityPromoter(ctx, toolevents.DefaultInactivityTimeout)
 
 	hostname, _ := os.Hostname()
 	nodeIdentity, err := identity.LoadOrCreate(hostname)
@@ -109,8 +78,8 @@ func ExecuteAgent(ctx context.Context, c *cli.Command) error {
 	}
 	peerMgr := peer.NewManager(nodeIdentity, peerStore, stateMgr)
 	go peerMgr.Run()
-	detector.SetHost(peerMgr.LocalID(), peerMgr.LocalName())
-	silenceMonitor.SetHost(peerMgr.LocalID(), peerMgr.LocalName())
+	watcher.SetHost(peerMgr.LocalID(), peerMgr.LocalName())
+	go watcher.Run(ctx)
 
 	peerClient := peer.NewClient(
 		hubURL, nodeIdentity, peerStore, stateMgr, peerMgr, actTracker, tracker, client.TmuxPath(),

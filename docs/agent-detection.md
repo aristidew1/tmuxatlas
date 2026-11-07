@@ -2,25 +2,34 @@
 
 TmuxAtlas uses a multi-layered approach to detect AI coding agents running in tmux panes and track their state. This document describes how each agent is detected, what events they produce, and how "waiting for input" state is determined.
 
+## Statuses
+
+Every agent pane has exactly one status, kept until it changes:
+
+| Status | Meaning | Shown as |
+|--------|---------|----------|
+| `active` | The agent is producing its answer | En cours |
+| `waiting` | The agent is blocked on a question or an approval | En attente |
+| `completed` | The agent finished its turn and sits at its prompt | Terminé |
+| `idle` | The agent is open but has not been given any work | Inactif |
+| `error` | A hook reported an error; kept until the agent works again | Erreur |
+
+Only `waiting` and `error` are alerts a user can dismiss.
+
 ## Detection Layers
 
-There are five layers, from most precise to most general:
+| Layer | Mechanism | Latency |
+|-------|-----------|---------|
+| **Hooks** | Agent calls `tmuxatlas notify` | Instant |
+| **Watcher** | Reads each agent pane every 2 seconds (`pkg/toolevents/watcher.go`) | ~2s |
 
-| Layer | Mechanism | Latency | Accuracy |
-|-------|-----------|---------|----------|
-| **Hook-based** | Agent calls `tmuxatlas notify` via configured hooks | Instant | Exact |
-| **Process tree** | Scan `/proc` for known agent binaries | ~5s | High |
-| **Silence + capture-pane** | Detect quiet panes, inspect content for prompts | ~10-20s | Medium |
-| **Inactivity promoter** | Promote to "waiting" after 30s of no hook activity | ~30s | Low |
-| **Reconciler** | Clear stale events when agent process exits | ~3s | High |
-
-Each layer fills gaps left by the ones above it. An agent with hooks configured gets instant, accurate tracking. An agent with no hooks still gets detected via process tree scanning, with prompt detection via pane content inspection.
+Hooks are the fastest signal. The watcher corrects what they cannot report, such as an approval given, an interrupted turn or an agent started before TmuxAtlas.
 
 ## Per-Agent Breakdown
 
 ### Claude Code
 
-**Detection:** Hook-based (native waiting).
+**Detection:** Hooks and screen reading.
 
 **Hooks configured** (`~/.claude/settings.json`):
 - `PreToolUse` → `active` ("Using tool")
@@ -29,26 +38,26 @@ Each layer fills gaps left by the ones above it. An agent with hooks configured 
 - `Notification` (elicitation_dialog) → `waiting` ("Needs input")
 - `Stop` → `completed` ("Task complete")
 
-**Waiting detection:** Native — Claude sends explicit `waiting` events when it needs user approval or input. No fallback detection is used.
+**Waiting detection:** Hooks, confirmed by the dialog on screen. The screen also clears the status as soon as the dialog closes, and catches question dialogs that send no notification.
 
 **Process tree match:** Binary named `claude`.
 
 ### Codex
 
-**Detection:** Hybrid — hook for completion, process tree + silence monitor for waiting.
+**Detection:** Screen reading, plus a hook for completion.
 
 **Hook configured** (`~/.codex/config.toml`):
 - `notify = ["tmuxatlas", "notify", "-t", "codex", "--event-data"]`
 - Fires on `agent-turn-complete` → `completed` status
 - Message extracted from `last-assistant-message` field (truncated to 200 chars)
 
-**Waiting detection:** Silence monitor. When codex goes quiet for 10s, TmuxAtlas captures the pane content and looks for approval prompts (e.g., `allow / deny`, `(y/n)`). Limited to 2 checks per silence period to avoid unnecessary tmux commands.
+**Waiting detection:** The watcher reads the approval prompt on screen.
 
 **Process tree match:** Binary named `codex`, or node script with "codex" in the path (e.g., `node /usr/lib/node_modules/@openai/codex/bin/codex.js`).
 
 ### GitHub Copilot CLI
 
-**Detection:** Hook-based for activity, silence monitor for waiting.
+**Detection:** Hook-based. Without hooks, judged from its output and visible prompts.
 
 **Hooks configured** (`~/.copilot/hooks/tmuxatlas.json`):
 - `sessionStart` → `active` ("Session started")
@@ -58,9 +67,7 @@ Each layer fills gaps left by the ones above it. An agent with hooks configured 
 - `userPromptSubmitted` → `active` ("Thinking")
 - `errorOccurred` → `error` ("Error occurred")
 
-**Waiting detection:** Two mechanisms:
-1. **Inactivity promoter** — if hooks are firing but then go quiet for 30s, promotes to `waiting` ("May need attention")
-2. **Silence monitor** — if detected via process tree (no hooks), captures pane content after 10s of silence
+**Waiting detection:** Without a hook that reports it, a visible prompt after 10 seconds of silence.
 
 **Note:** Repository-level hooks (`.github/copilot/hooks.json`) take precedence over global hooks and can override them.
 
@@ -78,81 +85,38 @@ Each layer fills gaps left by the ones above it. An agent with hooks configured 
 - `session.idle` → `completed` ("Idle")
 - `session.error` → `error` ("Error")
 
-**Waiting detection:** Native — OpenCode sends explicit `waiting` events via the `permission.asked` hook when it needs user approval. Like Claude, no fallback silence/inactivity detection is needed.
+**Waiting detection:** Native — OpenCode sends explicit `waiting` events via the `permission.asked` hook when it needs user approval.
 
 **Process tree match:** Binary named `opencode`.
 
 ## How Each Layer Works
 
-### Hook-Based Detection
+### Hooks
 
 Agents call `tmuxatlas notify` which sends an event only through the current user's private Unix socket. The notify command auto-detects the tmux session, window, and pane from the `TMUX_PANE` environment variable.
 
-Event delivery path:
 ```
 Agent hook → tmuxatlas notify → unix socket → POST /api/tool-event → Tracker.Record() → WebSocket broadcast
 ```
 
-The server stamps the local host identity on incoming events for multi-host navigation.
+Repeating the current status is ignored: "waiting since" keeps its original time and subscribers only hear about changes.
 
-### Process Tree Detection
+### Watcher
 
-The detector (`pkg/toolevents/detector.go`) runs every 5 seconds:
-1. Lists all tmux panes via `list-panes -a`
-2. For each pane, reads `/proc/<pid>/cmdline` for child processes
-3. Checks children and grandchildren against known agent patterns (handles `shell → node → agent` chains)
-4. Records synthetic `active` events with `auto_detected: true`
-5. Skips panes that already have hook-based tracking
+On each cycle the watcher lists all panes and, for each one running an agent (foreground command or process tree), captures the screen and classifies it (`pkg/toolevents/screen.go`):
 
-### Silence Monitor + Capture-Pane
+- **Claude Code:** the input box is the anchor. With it, a spinner line above means working, otherwise ready. Without it, a menu or dialog footer means waiting. The conversation above is not trusted, since it may quote any of these strings.
+- **Codex:** `esc to interrupt` means working, an approval prompt without composer means waiting, the `›` composer means ready.
+- **Other tools:** their hooks decide when they have any. Otherwise recent output means working, and silence means waiting if a prompt is visible, ready if not.
 
-The silence monitor (`pkg/toolevents/silence.go`) watches panes with agents that lack native waiting hooks (currently Codex and Copilot):
-1. Tracks last output time per pane via `%output` control mode notifications
-2. When a pane has been quiet for 10+ seconds, runs `tmux capture-pane -p` to get visible text
-3. Passes the last ~10 non-empty lines to `DetectPrompt()` which checks for:
-   - **Approval patterns:** `(y/n)`, `[Y/n]`, `approve`, `deny`, `yes/no`
-   - **Numbered option lists** followed by a prompt character (`>`, `?`, `:`)
-   - **Agent-specific patterns:** codex `allow/deny`, copilot selection menus, `press enter`
-   - **Input prompts:** short lines ending with `?`, `>`, or `:` (excludes shell prompts like `❯`, `$`, `#`, `%`, `user@host:~$`)
-4. If a prompt is found, records a `waiting` event
-5. Checks are limited to 2 per silence period — resets when output resumes
+A screen with no positive evidence keeps the last status. Two captures in a row must show the prompt before a turn counts as finished. A status from a hook is not overridden for 3 seconds, except by a visible dialog.
 
-### Inactivity Promoter
+The first status seen for an agent is marked `baseline`: it describes an existing situation, so it triggers no notification after a restart.
 
-For tools without native waiting hooks, the tracker watches for prolonged silence after hook-based `active` events:
-- If no new event arrives within 30 seconds, promotes to `waiting` ("May need attention")
-- Only applies to hook-based activity (not auto-detected events, since those can't distinguish working vs idle)
-- Acts as a fallback when silence monitor doesn't trigger (e.g., control mode not running)
-
-### Reconciler
-
-Runs every 3 seconds to clean up stale events:
-- Checks if the pane still exists
-- Checks if the foreground process is a shell (zsh, bash, fish, etc.) — meaning the agent exited
-- If either condition is true, clears the event with `completed` status
-
-## Event Lifecycle
-
-```
-Agent starts in pane
-    │
-    ├─ Hook fires → active event recorded
-    │   └─ Hook fires again → active event (clears previous)
-    │       └─ Hook fires waiting → waiting event (alert shown)
-    │           └─ Hook fires active → clears waiting (alert dismissed)
-    │
-    ├─ No hooks → Detector finds process → synthetic active (auto_detected)
-    │   └─ Output stops for 10s → Silence monitor captures pane
-    │       ├─ Prompt found → waiting event (alert shown)
-    │       │   └─ Output resumes → checks reset, reconciler clears if agent exits
-    │       └─ No prompt → checks exhausted (max 2), waits for output to resume
-    │
-    └─ Agent exits
-        └─ Reconciler detects shell foreground → completed event (alert cleared)
-```
+The watcher removes the status when the pane closes, when its foreground returns to a shell, or when it moves to another session or window.
 
 ## Multi-Host Considerations
 
-In hub/peer topologies, events need the host identity for correct frontend navigation. The server stamps `Host` and `HostName` on events received via the HTTP API. Components that record events directly (detector, silence monitor) have their host identity set at startup via `SetHost()`.
+In hub/peer topologies, events need the host identity for correct frontend navigation. The server stamps `Host` and `HostName` on events received via the HTTP API. The watcher has their host identity set at startup via `SetHost()`.
 
 Events without host info will navigate to local sessions only, which breaks in multi-host setups where the session might be on a remote peer.

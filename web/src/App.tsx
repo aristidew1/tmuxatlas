@@ -34,7 +34,7 @@ import {
   type CommandId,
   type CommandScope,
 } from './commands/registry'
-import { buildWorkspaceViewModel, workspaceOwnedBy } from './workspace/model'
+import { buildWorkspaceViewModel, toolEventStatusLabel, workspaceOwnedBy } from './workspace/model'
 import { useWorkspacePreferences } from './workspace/preferences'
 
 function errorMessage(err: unknown): string {
@@ -919,7 +919,7 @@ function AppInner({
                   hostName={activeHost?.name || activeSession?.host_name}
                   windowLabel={activeWindow ? `${activeWindow.index}:${activeWindow.name}` : undefined}
                   paneLabel={activePane ? String(activePane.index) : undefined}
-                  toolStatus={activeToolEvent ? `${activeToolEvent.tool} · ${activeToolEvent.status}` : undefined}
+                  toolStatus={activeToolEvent ? `${activeToolEvent.tool} · ${toolEventStatusLabel(activeToolEvent.status)}` : undefined}
                   hubConnection={applicationState.connection}
                   agentOnline={activeSession ? (activeHost?.online ?? activeSession.host_online !== false) : true}
                   sessionAvailable={Boolean(activeSession)}
@@ -981,7 +981,7 @@ function AppInner({
           updateAvailable={updateAvailable}
           hosts={hosts}
           agentCount={
-            allToolEvents.filter(e => e.auto_detected || e.status === 'waiting' || e.status === 'error').length
+            allToolEvents.length
           }
           onHelp={() => setHelpOpen(true)}
           alignSlotToTerminal={!sidebarCollapsed && !terminalFullscreen}

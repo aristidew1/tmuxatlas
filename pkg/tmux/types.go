@@ -47,6 +47,8 @@ type PaneDetailed struct {
 	Session string `json:"session"` // session name (not ID)
 	Window  int    `json:"window"`  // window index
 	PID     int    `json:"pid"`
+	// CurrentCommand is the pane's foreground command.
+	CurrentCommand string `json:"current_command"`
 }
 
 // Pane represents a tmux pane

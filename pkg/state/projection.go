@@ -105,6 +105,7 @@ type ToolEvent struct {
 	Message      string       `json:"message,omitempty"`
 	Timestamp    time.Time    `json:"timestamp"`
 	AutoDetected bool         `json:"auto_detected,omitempty"`
+	Baseline     bool         `json:"baseline,omitempty"`
 }
 
 type Activity struct {

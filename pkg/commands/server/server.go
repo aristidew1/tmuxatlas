@@ -151,10 +151,9 @@ func execute(ctx context.Context, c *cli.Command, pureHub bool) error {
 	tracker := toolevents.NewTracker()
 	actTracker := activity.NewTracker()
 	var (
-		client         *tmux.Client
-		stateMgr       *state.Manager
-		detector       *toolevents.Detector
-		silenceMonitor *toolevents.SilenceMonitor
+		client   *tmux.Client
+		stateMgr *state.Manager
+		watcher  *toolevents.Watcher
 	)
 	if !pureHub {
 		var err error
@@ -176,36 +175,7 @@ func execute(ctx context.Context, c *cli.Command, pureHub bool) error {
 		discovery := tmux.NewDiscovery(client, interval, stateMgr.UpdateSessions)
 		go discovery.Run(ctx)
 
-		reconciler := toolevents.NewReconciler(tracker, func(paneID string) toolevents.PaneState {
-			panes, err := client.ListAllPanes()
-			if err != nil {
-				return toolevents.PaneState{Exists: false}
-			}
-			for _, p := range panes {
-				if p.ID == paneID {
-					return toolevents.PaneState{Exists: true, CurrentCommand: p.CurrentCommand, PID: p.PID}
-				}
-			}
-			return toolevents.PaneState{Exists: false}
-		}, 3*time.Second)
-		go reconciler.Run(ctx)
-
-		detector = toolevents.NewDetector(tracker, func() []toolevents.PaneInfo {
-			panes, err := client.ListAllPanesDetailed()
-			if err != nil {
-				return nil
-			}
-			infos := make([]toolevents.PaneInfo, 0, len(panes))
-			for _, p := range panes {
-				infos = append(infos, toolevents.PaneInfo{
-					PaneID: p.ID, Session: p.Session, Window: p.Window, PID: p.PID,
-				})
-			}
-			return infos
-		}, 5*time.Second)
-		go detector.Run(ctx)
-		silenceMonitor = toolevents.NewSilenceMonitor(tracker, detector, client)
-		go silenceMonitor.Run(ctx)
+		watcher = toolevents.NewWatcher(tracker, agentPaneLister(client), client.CapturePaneContent, toolevents.DefaultWatchInterval)
 
 		if !c.Bool("no-control-mode") {
 			ctrlMode := tmux.NewControlMode(client, stateMgr.UpdateSessions,
@@ -215,12 +185,11 @@ func execute(ctx context.Context, c *cli.Command, pureHub bool) error {
 					if session := stateMgr.SessionForPane(paneID); session != "" {
 						actTracker.Record(session, dataLen)
 					}
-					silenceMonitor.RecordOutput(paneID)
+					watcher.RecordOutput(paneID)
 				}),
 			)
 			go ctrlMode.Run(ctx)
 		}
-		go tracker.RunInactivityPromoter(ctx, toolevents.DefaultInactivityTimeout)
 	}
 
 	// Initialize preferences store
@@ -316,11 +285,11 @@ func execute(ctx context.Context, c *cli.Command, pureHub bool) error {
 	}
 	go peerMgr.RunContext(ctx)
 
-	// Stamp local host identity on detector and silence monitor so
-	// auto-detected events include the host info for multi-host navigation
-	if detector != nil {
-		detector.SetHost(peerMgr.LocalID(), peerMgr.LocalName())
-		silenceMonitor.SetHost(peerMgr.LocalID(), peerMgr.LocalName())
+	// The watcher starts once it knows the local host, so that its events and
+	// hook events for the same pane share one key.
+	if watcher != nil {
+		watcher.SetHost(peerMgr.LocalID(), peerMgr.LocalName())
+		go watcher.Run(ctx)
 	}
 
 	// Initialize pairing manager
@@ -374,7 +343,7 @@ func execute(ctx context.Context, c *cli.Command, pureHub bool) error {
 		PeerHandler:     peerHandler,
 		PairingMgr:      pairingMgr,
 		PTYRelay:        ptyRelay,
-		Detector:        detector,
+		Watcher:         watcher,
 		LocalOnly:       localOnly,
 		Role:            map[bool]string{true: "hub", false: "standalone"}[pureHub],
 		Deployment:      os.Getenv("TMUXATLAS_DEPLOYMENT"),
@@ -523,4 +492,22 @@ func init() {
 	common.RegisterCommand(serverCommand)
 	common.RegisterCommand(standaloneCommand)
 	common.RegisterCommand(hubCommand)
+}
+
+// agentPaneLister lists tmux panes for the agent watcher.
+func agentPaneLister(client *tmux.Client) toolevents.PaneLister {
+	return func() ([]toolevents.WatchedPane, error) {
+		panes, err := client.ListAllPanesDetailed()
+		if err != nil {
+			return nil, err
+		}
+		result := make([]toolevents.WatchedPane, 0, len(panes))
+		for _, pane := range panes {
+			result = append(result, toolevents.WatchedPane{
+				ID: pane.ID, Session: pane.Session, Window: pane.Window,
+				PID: pane.PID, CurrentCommand: pane.CurrentCommand,
+			})
+		}
+		return result, nil
+	}
 }

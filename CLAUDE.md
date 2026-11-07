@@ -37,7 +37,7 @@ pkg/
   tmux/                  # tmux client, PTY, control mode, discovery
   peer/                  # Multi-host peer protocol, manager, PTY relay, session_extras (previews, replies, directories)
   identity/              # ed25519 keypair, peer store, pairing
-  toolevents/            # Agent detection, event tracking, silence monitor, prompt parser and promptoptions
+  toolevents/            # Agent watcher, screen classifier, event tracking, prompt parser and promptoptions
   auth/                  # Passkey auth + session management
   agentcheck/            # Agent installation & hook configuration checks
   activity/              # Activity tracking (sparklines)
@@ -88,17 +88,17 @@ web/
 **All tool events must include `Host` and `HostName` fields.** The frontend uses `host` to construct session keys (`host/session`) for URL routing and navigation. Events missing host info will fail to navigate to the correct session in multi-host setups.
 
 - The HTTP handler (`POST /api/tool-event`) stamps `Host`/`HostName` from `PeerMgr.LocalID()`/`LocalName()` automatically.
-- Components that record events directly (detector, silence monitor, inactivity promoter) must have host identity set via `SetHost()` at startup.
+- Components that record events directly (the agent watcher) must have host identity set via `SetHost()` at startup.
 - Frontend session keys follow the format `host/sessionName` for remote sessions, or just `sessionName` for local-only (single host) mode.
 
 ### Agent Detection
 
 Agent detection uses multiple layers — see `docs/agent-detection.md` for full details. Key rules:
 
-- **Claude and OpenCode** have native "waiting" hooks. Codex and Copilot rely on silence-based detection or inactivity promotion.
-- The silence monitor only runs `capture-pane` on panes with a detected non-Claude agent that have been silent for 10+ seconds, limited to 2 checks per silence period.
-- The inactivity promoter (30s timeout) is a fallback for when silence detection doesn't trigger.
-- The reconciler clears events when the agent process exits (foreground returns to a shell).
+- Each agent pane keeps one status until it changes: `active`, `waiting`, `completed`, `idle` or `error`. Only `waiting` and `error` can be dismissed.
+- The watcher reads every agent pane each 2 seconds and corrects what hooks cannot report. Add real captures to `pkg/toolevents/screen_test.go` when a CLI changes its screen.
+- A screen with no positive evidence keeps the last status: never guess.
+- Unset `TMUX` and set `TMUX_TMPDIR` when running Go tests from inside tmux: `$TMUX` takes precedence, and some tests run `kill-server`.
 
 ## Build & Release
 

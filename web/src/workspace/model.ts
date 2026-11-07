@@ -59,13 +59,15 @@ export function deriveSessionStatus(session: Session, events: ToolEvent[]): Work
   if (events.some(event => event.status === 'error')) return 'error'
   if (events.some(event => event.status === 'waiting')) return 'waiting'
   if (session.host_online === false) return 'offline'
+  if (events.some(event => event.status === 'active')) return 'running'
+  if (events.some(event => event.status === 'completed')) return 'done'
+  // An agent's own status is authoritative: a process running in the pane says
+  // nothing about whether the agent is working.
+  if (events.length > 0) return 'idle'
   const hasRunningPane = session.windows.some(window =>
     window.panes?.some(pane => Boolean(pane.current_command) && !shellCommands.has(pane.current_command)),
   )
-  if (events.some(event => event.status === 'active') || hasRunningPane) return 'running'
-  // « Terminé » is only true when an agent reported completion. A plain shell is idle.
-  if (events.some(event => event.status === 'completed')) return 'done'
-  return 'idle'
+  return hasRunningPane ? 'running' : 'idle'
 }
 
 function highestStatus(sessions: WorkspaceSession[], online: boolean): WorkspaceStatus {
@@ -179,6 +181,12 @@ export function workspaceStatusLabel(status: WorkspaceStatus): string {
     error: 'Erreur',
     offline: 'Hors ligne',
   }[status]
+}
+
+export function toolEventStatusLabel(status: ToolEvent['status']): string {
+  return workspaceStatusLabel(
+    ({ active: 'running', waiting: 'waiting', completed: 'done', error: 'error', idle: 'idle' } as const)[status],
+  )
 }
 
 /** The same workspace limited to the sessions a given account owns. */

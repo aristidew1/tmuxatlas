@@ -31,7 +31,9 @@ export function useNotifications(pushSubscribed = false) {
       // Determine if this transition is worth a browser notification
       const enabledStatuses = prefs.notifications.statuses
       let shouldNotify = false
-      if (evt.status === 'waiting' && prev?.status !== 'waiting' && enabledStatuses.includes('waiting')) {
+      if (evt.baseline) {
+        shouldNotify = false
+      } else if (evt.status === 'waiting' && prev?.status !== 'waiting' && enabledStatuses.includes('waiting')) {
         shouldNotify = true
       } else if (evt.status === 'error' && prev?.status !== 'error' && enabledStatuses.includes('error')) {
         shouldNotify = true

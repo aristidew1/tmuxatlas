@@ -176,21 +176,17 @@ echo '{"hook_event_name":"Stop","last_assistant_message":"Done"}' | tmuxatlas no
 
 **Communication:** `tmuxatlas notify` uses only the current user's private Unix socket. It never falls back to an unauthenticated HTTP endpoint. Run either the local Hub or Agent service on every machine that emits hook events.
 
-## Inactivity-based waiting detection
+## Reading the screen
 
-Claude Code sends explicit "waiting" events when it needs input (permission prompts, input dialogs). Other tools (Copilot, Codex, OpenCode) don't have equivalent hooks.
-
-To bridge this gap, TmuxAtlas includes an **inactivity promoter**: if a non-Claude tool sends "active" events but then goes quiet for 30 seconds, TmuxAtlas automatically generates a synthetic "waiting" event with the message "May need attention". This surfaces the alert in the UI and triggers push notifications, just like a native waiting event would.
-
-This only applies to tools without native waiting support — Claude's explicit hooks are always trusted and never overridden.
-
-The timeout is 30 seconds by default. This balances catching idle agents quickly against false positives during normal pauses between tool calls.
+Hooks do not report everything: an approval given, an interrupted turn, or an agent started before TmuxAtlas. TmuxAtlas also reads each agent's pane every 2 seconds and corrects the status from what is on screen. See [Agent detection](agent-detection.md).
 
 ## Status values
 
 | Status | Meaning | UI behavior |
 |--------|---------|-------------|
-| `active` | Agent is working normally | Badge in sidebar |
+| `active` | Agent is working normally | « En cours » |
 | `waiting` | Agent needs user input | Alert banner + push notification |
 | `error` | Agent hit an error | Alert banner + push notification |
+| `completed` | Agent finished its turn | « Terminé », optional notification |
+| `idle` | Agent is open with no work given yet | « Inactif » |
 | `completed` | Agent finished its task | Clears alerts |

@@ -137,7 +137,7 @@ func (s *Sender) statusEnabled(status toolevents.Status) bool {
 }
 
 func buildPayload(evt *toolevents.Event) (PushPayload, bool) {
-	if evt == nil || evt.Host == "" || evt.Session == "" {
+	if evt == nil || evt.Host == "" || evt.Session == "" || evt.Baseline || evt.Removed {
 		return PushPayload{}, false
 	}
 	var title string

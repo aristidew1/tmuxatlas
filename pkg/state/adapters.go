@@ -28,7 +28,6 @@ func NewActivityKey(hostID, session string) ActivityKey {
 }
 
 // ApplyToolEvent adapts the latest tracker event into one canonical mutation.
-// Active and completed are clearing transitions in the existing Tracker.
 func (c *Coordinator) ApplyToolEvent(ctx context.Context, event *toolevents.Event, localHostID string) (CommitResult, error) {
 	if event == nil {
 		return CommitResult{}, errors.New("tool event is nil")
@@ -41,8 +40,7 @@ func (c *Coordinator) ApplyToolEvent(ctx context.Context, event *toolevents.Even
 		return CommitResult{}, errors.New("tool event host ID is required")
 	}
 	key := NewToolEventKey(hostID, event.Session, event.Window, event.Pane, string(event.Tool))
-	if (event.Status == toolevents.StatusActive && !event.AutoDetected) ||
-		event.Status == toolevents.StatusCompleted {
+	if event.Removed {
 		return c.Commit(ctx, Operation{Kind: OperationRemoveToolEvent, Key: string(key)})
 	}
 	value := ToolEvent{
@@ -50,7 +48,7 @@ func (c *Coordinator) ApplyToolEvent(ctx context.Context, event *toolevents.Even
 		Window: strconv.Itoa(event.Window), Pane: event.Pane,
 		Tool: string(event.Tool), Status: string(event.Status),
 		Message: event.Message, Timestamp: event.Timestamp,
-		AutoDetected: event.AutoDetected,
+		AutoDetected: event.AutoDetected, Baseline: event.Baseline,
 	}
 	return c.Commit(ctx, Operation{Kind: OperationUpsertToolEvent, ToolEvent: &value})
 }
@@ -151,6 +149,9 @@ func (c *Coordinator) ClearToolEvents(
 	}
 	var operations []Operation
 	for key, event := range snapshot.State.ToolEvents {
+		if !toolevents.IsDismissible(toolevents.Status(event.Status)) {
+			continue
+		}
 		if session != "" && (event.HostID != hostID || event.Session != session ||
 			event.Window != strconv.Itoa(window) || event.Pane != pane) {
 			continue

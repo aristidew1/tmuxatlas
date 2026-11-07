@@ -55,6 +55,21 @@ describe('Workspace view model', () => {
     expect(model.hosts[0]).toMatchObject({ status: 'error', attentionCount: 2, sessionCount: 2 })
   })
 
+  it('follows the agent rather than the process running in its pane', () => {
+    const status = (eventStatus?: ToolEvent['status']) =>
+      buildWorkspaceViewModel(
+        [session('host-a', 'work', true, 'claude')],
+        eventStatus ? [{ host: 'host-a', session: 'work', tool: 'claude', status: eventStatus, window: 0, timestamp: '2026-01-03T00:00:00Z' }] : [],
+        new Map(),
+        hosts,
+      ).sessions[0].status
+    expect(status('active')).toBe('running')
+    expect(status('waiting')).toBe('waiting')
+    expect(status('completed')).toBe('done')
+    expect(status('idle')).toBe('idle')
+    expect(status()).toBe('running')
+  })
+
   it('filters by stable status and searchable Host, Session, Window or Agent terms', () => {
     const events: ToolEvent[] = [{ host: 'host-a', session: 'work', tool: 'codex', status: 'waiting', window: 0, timestamp: '2026-01-03T00:00:00Z' }]
     const model = buildWorkspaceViewModel([session('host-a'), session('host-b', 'other', false)], events, new Map(), hosts)

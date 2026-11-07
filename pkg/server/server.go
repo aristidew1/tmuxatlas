@@ -64,7 +64,7 @@ type Options struct {
 	PeerHandler      *peer.Handler
 	PairingMgr       *identity.PairingManager
 	PTYRelay         *peer.PTYRelay
-	Detector         *toolevents.Detector
+	Watcher          *toolevents.Watcher
 	LocalOnly        bool
 	routerObserver   func(chi.Routes)
 }
@@ -270,6 +270,11 @@ func Run(ctx context.Context, opts *Options) error {
 	if opts.Tracker != nil {
 		toolEvents := opts.Tracker.Subscribe()
 		defer opts.Tracker.Unsubscribe(toolEvents)
+		for _, event := range opts.Tracker.GetAll() {
+			if _, err := coordinator.ApplyToolEvent(ctx, event, localHostID); err != nil {
+				return fmt.Errorf("initialize canonical tool events: %w", err)
+			}
+		}
 		go func() {
 			for {
 				select {
@@ -655,8 +660,8 @@ func Run(ctx context.Context, opts *Options) error {
 					}
 				}
 				// Also include panes detected via process tree inspection
-				if opts.Detector != nil {
-					for paneID := range opts.Detector.DetectedPanes() {
+				if opts.Watcher != nil {
+					for paneID := range opts.Watcher.DetectedPanes() {
 						agentEventPanes[paneID] = true
 					}
 				}
@@ -666,10 +671,13 @@ func Run(ctx context.Context, opts *Options) error {
 						agentPanes++
 					}
 				}
+				activeAgents := 0
 				waitingAgents := 0
 				errorAgents := 0
 				for _, evt := range toolEvents {
 					switch evt.Status {
+					case "active":
+						activeAgents++
 					case "waiting":
 						waitingAgents++
 					case "error":
@@ -691,7 +699,7 @@ func Run(ctx context.Context, opts *Options) error {
 					"panes":       len(allPanes),
 					"agent_panes": agentPanes,
 					"agents": map[string]int{
-						"active":  agentPanes,
+						"active":  activeAgents,
 						"waiting": waitingAgents,
 						"error":   errorAgents,
 					},

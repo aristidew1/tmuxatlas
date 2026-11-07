@@ -20,6 +20,12 @@ export async function ensureTerminalFont(name: string): Promise<boolean> {
   const loader = bundledTerminalFonts[name]
   if (!loader) return false
   await loader()
-  await document.fonts?.load(`13px "${name}"`)
+  // Normal and bold are separate files: wait for both, as well as the fallback
+  // fonts the terminal needs for symbols, before anything is drawn with them.
+  await Promise.all(
+    [`13px "${name}"`, `bold 13px "${name}"`, '13px "JetBrains Mono"', '13px "Symbols Nerd Font Mono"'].map(font =>
+      document.fonts?.load(font),
+    ),
+  )
   return true
 }

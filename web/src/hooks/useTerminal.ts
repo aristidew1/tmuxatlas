@@ -423,8 +423,13 @@ export function useTerminal(sessionName: string, hostId: string, mobileInput?: M
         if (!loaded || terminalGenerationRef.current !== terminalGeneration || termRef.current !== term) {
           return
         }
+        // xterm ignores an identical value, and WebGL keeps the glyphs it already
+        // drew with a fallback font: force a new measure and redraw every glyph.
+        term.options.fontFamily = 'monospace'
         term.options.fontFamily = fontFamily
+        term.clearTextureAtlas()
         doFit()
+        term.refresh(0, term.rows - 1)
       })
 
       terminalDisposablesRef.current.push(

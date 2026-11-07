@@ -96,6 +96,8 @@ vi.mock('@xterm/xterm', () => {
     private dataListeners = new Set<Listener<string>>()
     private resizeListeners = new Set<Listener<{ cols: number; rows: number }>>()
 
+    clearTextureAtlas = vi.fn()
+    refresh = vi.fn()
     constructor(options: Record<string, any>) {
       this.options = { ...options }
       xtermState.terminals.push(this)

@@ -772,7 +772,7 @@ function AppInner({
           <QuickSwitcher
             workspace={workspace}
             commands={commands}
-            pinnedTargets={workspacePreferences.pinned}
+            pinnedTargets={[]}
             recentTargets={workspacePreferences.recent}
             onSelect={handleQuickSwitch}
             onClose={closeQuickSwitcher}
@@ -824,9 +824,7 @@ function AppInner({
             selectedSession={selectedSession}
             collapsed={sidebarCollapsed}
             collapseMode={(prefs.sidebar.collapse_mode || 'small') as 'small' | 'hidden'}
-            pinnedTargets={workspacePreferences.pinned}
             recentTargets={workspacePreferences.recent}
-            onTogglePin={workspacePreferences.togglePin}
             onSessionSelect={handleSessionSelect}
             onDetachSession={detachBrowserSession}
             canKillSession

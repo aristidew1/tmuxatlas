@@ -5,7 +5,7 @@ import { parseSessionKey, type Session } from '../hooks/useSessions'
 import type { WorkspaceSession, WorkspaceStatus, WorkspaceViewModel } from '../workspace/model'
 import { filterWorkspaceSessions, isAttentionStatus, workspaceStatusLabel } from '../workspace/model'
 import { Button, Dialog, StatusIcon } from './ui'
-import { Search, Pin, ChevronDown, ChevronRight, Pencil, Unplug, Trash2 } from 'lucide-react'
+import { Search, ChevronDown, ChevronRight, Pencil, Unplug, Trash2 } from 'lucide-react'
 import { resolveOwnerName } from '../lib/accountsApi'
 import { OwnerPicker } from './OwnerPicker'
 import { useHostLabel } from '../lib/hostLabel'
@@ -16,9 +16,7 @@ interface SidebarProps {
   selectedSession: string | null
   collapsed: boolean
   collapseMode: 'small' | 'hidden'
-  pinnedTargets: string[]
   recentTargets: string[]
-  onTogglePin: (target: string) => void
   onSessionSelect: (session: Session) => void
   onDetachSession: (target: string) => void
   canKillSession?: boolean
@@ -84,8 +82,6 @@ export function Sidebar({
   selectedSession,
   collapsed,
   collapseMode,
-  pinnedTargets,
-  onTogglePin,
   onSessionSelect,
   onDetachSession,
   canKillSession = false,
@@ -124,7 +120,6 @@ export function Sidebar({
       ),
     [query, statusFilter, workspace.sessions],
   )
-  const pinnedSet = useMemo(() => new Set(pinnedTargets), [pinnedTargets])
   const filtering = query.trim().length > 0 || statusFilter !== 'all'
 
   useEffect(() => {
@@ -362,26 +357,8 @@ export function Sidebar({
               session={session.name}
               ownerName={ownerName}
               testId="sidebar-owner-badge"
-              className="absolute bottom-1 right-8 !py-0"
+              className="absolute bottom-1 right-2 !py-0"
             />
-          )}
-          {(!collapsed || mobileDrawerActive) && (
-            <button
-              type="button"
-              aria-label={
-                pinnedSet.has(session.key)
-                  ? `Désépingler la session ${session.name} sur ${hostLabel(session.hostId, session.hostName === session.hostId ? 'Hôte' : session.hostName)}`
-                  : `Épingler la session ${session.name} sur ${hostLabel(session.hostId, session.hostName === session.hostId ? 'Hôte' : session.hostName)}`
-              }
-              aria-pressed={pinnedSet.has(session.key)}
-              onClick={() => onTogglePin(session.key)}
-              className={cn(
-                'mr-0.5 grid min-h-11 w-9 shrink-0 place-items-center self-center rounded text-muted-foreground opacity-0 [@media(hover:none)]:opacity-100 hover:bg-muted focus-visible:opacity-100 group-hover:opacity-100 ui-focus-ring',
-                pinnedSet.has(session.key) && 'opacity-100',
-              )}
-            >
-              <Pin size={14} aria-hidden="true" />
-            </button>
           )}
         </div>
       </li>
@@ -518,9 +495,7 @@ export function Sidebar({
                     <span className="min-w-0 flex-1 truncate">
                       {hostLabel(host.id, host.name === host.id ? 'Hôte' : host.name)}
                     </span>
-                    <span className="shrink-0 font-mono text-2xs text-muted-foreground">
-                      {sessions.length}
-                    </span>
+                    <span className="shrink-0 font-mono text-2xs text-muted-foreground">{sessions.length}</span>
                     {sessions.some(session => isAttentionStatus(session.status)) && (
                       <span className="shrink-0 rounded-full bg-warning/15 px-1.5 py-0.5 text-2xs text-warning">
                         {sessions.filter(session => isAttentionStatus(session.status)).length}
@@ -557,18 +532,6 @@ export function Sidebar({
             >
               <Pencil size={14} aria-hidden="true" className="mr-2" />
               Renommer
-            </button>
-            <button
-              role="menuitem"
-              type="button"
-              onClick={() => {
-                onTogglePin(contextMenu.session.key)
-                setContextMenu(null)
-              }}
-              className="flex h-10 w-full items-center rounded px-3 text-left hover:bg-secondary focus:bg-secondary focus:outline-none"
-            >
-              <Pin size={14} aria-hidden="true" className="mr-2" />
-              {pinnedSet.has(contextMenu.session.key) ? 'Désépingler' : 'Épingler'}
             </button>
             <div role="separator" className="my-1 h-px bg-border" />
             <button

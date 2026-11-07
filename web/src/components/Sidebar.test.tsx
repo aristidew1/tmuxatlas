@@ -43,9 +43,7 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof Sidebar>> = {}) 
     selectedSession: 'host-a/work',
     collapsed: false,
     collapseMode: 'small',
-    pinnedTargets: [],
     recentTargets: [],
-    onTogglePin: vi.fn(),
     onSessionSelect: vi.fn(),
     onDetachSession: vi.fn(),
     ...overrides,
@@ -78,13 +76,11 @@ describe('state-driven Sidebar', () => {
     expect(screen.getAllByRole('button', { name: /Erreur/ })[0].querySelector('.atlas-flash')).toBeInTheDocument()
   })
 
-  it('supports text/status filters and Pin actions', async () => {
-    const togglePin = vi.fn()
-    renderSidebar({ onTogglePin: togglePin })
+  it('supports text/status filters and offers no pin action', async () => {
+    renderSidebar()
     await userEvent.type(screen.getByLabelText('Rechercher des sessions'), 'codex')
     expect(screen.getAllByRole('button', { name: /Ouvrir la session work sur Duplicate Host/ })).toHaveLength(1)
-    await userEvent.click(screen.getByRole('button', { name: /Épingler la session work sur Duplicate Host/ }))
-    expect(togglePin).toHaveBeenCalledWith('host-a/work')
+    expect(screen.queryByRole('button', { name: /pingler/ })).not.toBeInTheDocument()
 
     await userEvent.clear(screen.getByLabelText('Rechercher des sessions'))
     await userEvent.click(screen.getByRole('button', { name: /À traiter/ }))
@@ -118,7 +114,7 @@ describe('state-driven Sidebar', () => {
 
   it('groups every Session exactly once under its stable Host', () => {
     const calmWorkspace = buildWorkspaceViewModel(sessions, [], new Map(), hosts)
-    renderSidebar({ workspace: calmWorkspace, pinnedTargets: ['host-a/work'], recentTargets: ['host-b/work'] })
+    renderSidebar({ workspace: calmWorkspace, recentTargets: ['host-b/work'] })
     expect(screen.queryByText(/Pinned ·/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Recent ·/)).not.toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'Replier les sessions de Duplicate Host' })[0]).toHaveAttribute(
@@ -182,9 +178,7 @@ describe('state-driven Sidebar', () => {
         selectedSession="host-a/work"
         collapsed={false}
         collapseMode="small"
-        pinnedTargets={[]}
         recentTargets={[]}
-        onTogglePin={vi.fn()}
         onSessionSelect={vi.fn()}
         onDetachSession={vi.fn()}
       />,
@@ -229,9 +223,7 @@ describe('state-driven Sidebar', () => {
             selectedSession={null}
             collapsed={false}
             collapseMode="small"
-            pinnedTargets={[]}
             recentTargets={[]}
-            onTogglePin={vi.fn()}
             onSessionSelect={vi.fn()}
             onDetachSession={vi.fn()}
             mobileOpen={open}
@@ -268,9 +260,7 @@ describe('state-driven Sidebar', () => {
             selectedSession={null}
             collapsed={false}
             collapseMode="small"
-            pinnedTargets={[]}
             recentTargets={[]}
-            onTogglePin={vi.fn()}
             onSessionSelect={vi.fn()}
             onDetachSession={vi.fn()}
             mobileOpen={open}

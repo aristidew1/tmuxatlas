@@ -13,6 +13,9 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+
+	"github.com/LosFurina/tmuxatlas/pkg/accounts"
+	"github.com/LosFurina/tmuxatlas/pkg/auth"
 )
 
 type lockedBuffer struct {
@@ -138,5 +141,50 @@ func TestPTYVoiceHoldMessages(t *testing.T) {
 	_ = conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
 	if _, data, err := conn.ReadMessage(); err == nil {
 		t.Fatalf("output after release: %q", data)
+	}
+}
+
+// Every account can dictate: a non-admin's Talk button must hold the space bar,
+// and their recorder must follow their tab's microphone.
+func TestPTYVoiceHoldForNonAdminAccount(t *testing.T) {
+	script := filepath.Join(t.TempDir(), "tmux")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nstty raw -echo\nprintf READY\nexec cat\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	handler := NewPTYTerminalHandler(script, nil)
+	used := make(chan string, 8)
+	handler.OnSessionUse = func(session, micID string) { used <- session + "/" + micID }
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		identity := auth.AccountIdentity{User: accounts.User{Role: "user"}}
+		handler.HandleSession(w, r.WithContext(auth.WithAccount(r.Context(), identity)))
+	}))
+	defer server.Close()
+	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http")+"?name=test&mic=tab12345", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, _, err := conn.ReadMessage(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-used:
+		if got != "test/tab12345" {
+			t.Fatalf("session use = %q", got)
+		}
+	default:
+		t.Fatal("the tab's microphone was not attached to the session")
+	}
+	if err := conn.WriteJSON(map[string]any{"type": "voice-hold", "on": true}); err != nil {
+		t.Fatal(err)
+	}
+	received := ""
+	for strings.Count(received, " ") < 3 {
+		_, data, err := conn.ReadMessage()
+		if err != nil {
+			t.Fatalf("no space bar hold for a non-admin account: %v", err)
+		}
+		received += string(data)
 	}
 }

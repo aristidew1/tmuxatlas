@@ -21,6 +21,11 @@ type AccountIdentity struct {
 	Done  <-chan struct{}
 }
 
+// WithAccount returns a context carrying the signed-in account.
+func WithAccount(ctx context.Context, identity AccountIdentity) context.Context {
+	return context.WithValue(ctx, accountContextKey{}, identity)
+}
+
 func AccountFromContext(ctx context.Context) (AccountIdentity, bool) {
 	identity, ok := ctx.Value(accountContextKey{}).(AccountIdentity)
 	return identity, ok
@@ -151,7 +156,7 @@ func (a *AccountsAuth) Middleware(next http.Handler) http.Handler {
 			return
 		}
 		SetSessionCookie(w, identity.Token, a.Sessions.TTL(), accountRequestSecure(r))
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), accountContextKey{}, identity)))
+		next.ServeHTTP(w, r.WithContext(WithAccount(r.Context(), identity)))
 	})
 }
 

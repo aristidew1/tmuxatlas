@@ -13,7 +13,6 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/LosFurina/tmuxatlas/pkg/activity"
-	"github.com/LosFurina/tmuxatlas/pkg/auth"
 	"github.com/LosFurina/tmuxatlas/pkg/tmux"
 )
 
@@ -98,10 +97,8 @@ func (h *PTYTerminalHandler) HandleSession(w http.ResponseWriter, r *http.Reques
 	log.Info("session ws client connected")
 
 	micID := r.URL.Query().Get("mic")
-	identity, account := auth.AccountFromContext(r.Context())
-	allowVoice := !account || identity.User.Role == "admin"
 	useSession := func() {
-		if allowVoice && h.OnSessionUse != nil && micID != "" {
+		if h.OnSessionUse != nil && micID != "" {
 			h.OnSessionUse(sessionName, micID)
 		}
 	}
@@ -180,7 +177,7 @@ func (h *PTYTerminalHandler) HandleSession(w http.ResponseWriter, r *http.Reques
 					sendResult(err)
 				}
 			}
-			if msg.Type == "voice-hold" && allowVoice {
+			if msg.Type == "voice-hold" {
 				if msg.On {
 					useSession()
 					hold.Start()

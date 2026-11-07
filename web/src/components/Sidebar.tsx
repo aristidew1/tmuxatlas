@@ -385,6 +385,18 @@ export function Sidebar({
 
   const isHidden = collapsed && collapseMode === 'hidden'
   const compact = collapsed && !mobileDrawerActive
+  const toggleLabel = collapsed ? 'Déplier la barre latérale' : 'Replier la barre latérale'
+  const toggleButton = onToggleCollapse && !isHidden && (
+    <button
+      type="button"
+      onClick={onToggleCollapse}
+      aria-label={toggleLabel}
+      title={toggleLabel}
+      className="ui-focus-ring hidden h-8 w-8 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground lg:flex"
+    >
+      {collapsed ? <PanelLeftOpen size={16} aria-hidden="true" /> : <PanelLeftClose size={16} aria-hidden="true" />}
+    </button>
+  )
   return (
     <>
       {mobileDrawerActive && (
@@ -412,12 +424,16 @@ export function Sidebar({
           !isHidden && 'border-r border-sidebar-border',
         )}
       >
+        {compact && toggleButton && (
+          <div className="hidden shrink-0 justify-center border-b border-sidebar-border p-2 lg:flex">{toggleButton}</div>
+        )}
         {(!collapsed || mobileDrawerActive) && (
           <div className="space-y-2 border-b border-sidebar-border p-3">
             <label className="sr-only" htmlFor="workspace-session-search">
               Rechercher des sessions
             </label>
-            <div className="relative">
+            <div className="flex items-center gap-2">
+            <div className="relative min-w-0 flex-1">
               <Search
                 size={14}
                 aria-hidden="true"
@@ -431,6 +447,8 @@ export function Sidebar({
                 placeholder="Filtrer les sessions…"
                 className="h-8 w-full rounded-md bg-input pl-8 pr-2 text-sm text-foreground ui-focus-ring"
               />
+            </div>
+            {toggleButton}
             </div>
             <div
               className="-mx-1 flex flex-nowrap gap-0.5 overflow-x-auto scrollbar-none [mask-image:linear-gradient(to_right,black_92%,transparent)]"
@@ -514,21 +532,6 @@ export function Sidebar({
             </ul>
           )}
         </nav>
-
-        {onToggleCollapse && !isHidden && (
-          <div className={cn('hidden shrink-0 border-t border-sidebar-border p-2 lg:flex', collapsed && 'justify-center')}>
-            <button
-              type="button"
-              onClick={onToggleCollapse}
-              aria-label={collapsed ? 'Déplier la barre latérale' : 'Replier la barre latérale'}
-              title={collapsed ? 'Déplier la barre latérale' : 'Replier la barre latérale'}
-              className="ui-focus-ring flex min-h-8 min-w-8 items-center justify-center gap-2 rounded px-2 text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-            >
-              {collapsed ? <PanelLeftOpen size={16} aria-hidden="true" /> : <PanelLeftClose size={16} aria-hidden="true" />}
-              {!collapsed && <span>Replier</span>}
-            </button>
-          </div>
-        )}
 
         {contextMenu && (
           <div
